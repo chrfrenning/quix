@@ -1,0 +1,6 @@
+{
+    "lr": 1e-3,
+    "model": "MyModel",
+    "data": "MyData",
+    "data-path": "/work2/litdata/"
+}

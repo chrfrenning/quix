@@ -38,7 +38,7 @@ class _AbstractBatchProcessor:
     ) -> None:
         raise NotImplementedError()
 
-class _BatchOptimizationContext(ContextManager):
+class _BatchProcessingContext(ContextManager):
 
     def __init__(
         self, 
@@ -272,7 +272,7 @@ class BatchProcessor(_AbstractBatchProcessor):
         context:ContextManager=nullcontext(),
         training:bool=True,
         **logging_kwargs
-    ) -> _BatchOptimizationContext:
+    ) -> _BatchProcessingContext:
         '''
         Creates and returns an optimization context for a batch training step.
 
@@ -286,7 +286,7 @@ class BatchProcessor(_AbstractBatchProcessor):
             **logging_kwargs: Additional keyword arguments for logging purposes.
 
         Returns:
-            _BatchOptimizationContext: An instance of the optimization context.
+            _BatchProcessingContext: An instance of the optimization context.
 
         Example:
         ```
@@ -301,7 +301,7 @@ class BatchProcessor(_AbstractBatchProcessor):
                 ...
         ```
         '''        
-        return _BatchOptimizationContext(
+        return _BatchProcessingContext(
             self, epoch, iteration, inputs, targets, 
             final_batch, context, training, **logging_kwargs
         )

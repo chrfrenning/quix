@@ -14,7 +14,8 @@ from torch.optim.lr_scheduler import _LRScheduler as LRScheduler
 from torch.cuda.amp.grad_scaler import GradScaler
 from dataclasses import dataclass, field
 from typing import Tuple, Sequence, Optional, Dict, Any, ContextManager, Callable, Type
-from .opt import BatchProcessor
+from .cfg import RunConfig
+from .proc import BatchProcessor
 from .log import BaseLogHandler
 
 
@@ -38,106 +39,6 @@ class BatchTrainer:
             loss, outputs = self.forward_fn(inputs, targets, self.model, self.loss_fn)
         
         return loss, outputs
-    
-
-@dataclass
-class _AbstractConfigContainer:
-
-    _additional_attr:Dict[str, Any] = field(init=False)
-
-    def __post_init__(self):
-        self._additional_attr = {}
-
-    def add_attr(self, **kwargs) -> None:
-        self._additional_attr = {**self._additional_attr, **kwargs}
-    
-    def __getattr__(self, __name: str) -> Any:
-        if __name in self._additional_attr:
-            return self._additional_attr[__name]
-        raise AttributeError(
-            f"{self.__class__.__name__} has no attribute '{__name}'"
-        )
-
-@dataclass
-class _AugConfigContainer(_AbstractConfigContainer):
-
-    rrcscale:tuple[float,float]
-    rrcratio:tuple[float,float]
-    interpolation_modes:Sequence[str]
-    hflip:bool
-    vflip:bool
-    aug3:bool
-    randaug:str
-    cutmix:bool
-    mixup:bool
-
-
-@dataclass
-class _SchConfigContainer(_AbstractConfigContainer):
-
-    lr_name:str
-    wd_name:str
-
-
-@dataclass
-class _ModConfigContainer(_AbstractConfigContainer):
-
-    name:str
-
-
-@dataclass
-class _DatConfigContainer(_AbstractConfigContainer):
-
-    name:str
-    loc:str
-    aug:_AugConfigContainer
-
-
-@dataclass
-class _OptConfigContainer(_AbstractConfigContainer):
-
-    name:str
-    learning_rate:float
-    weight_decay:float
-    opt_epsilon:float
-    gradclip:float
-    accumulation_steps:int
-    amsgrad:bool
-    sch:_SchConfigContainer
-
-
-@dataclass
-class _LogConfigContainer(_AbstractConfigContainer):
-
-    logfreq:int
-    savedir:str
-    debugstdout:bool
-
-
-@dataclass 
-class RunConfig:
-
-    epochs:int
-    batch_size:int
-    use_devices:Sequence[int]
-    targetindices:Sequence[int]
-    data_maxlen:int
-    mod:_ModConfigContainer
-    dat:_DatConfigContainer
-    opt:_OptConfigContainer
-    log:_LogConfigContainer
-
-    @property
-    def world_size(self) -> int:
-        return len(self.use_devices)
-
-    @property
-    def main_device(self) -> int:
-        return self.use_devices[0]
-    
-    @property
-    def use_ddp(self) -> bool:
-        return len(self.use_devices) > 1
     
 
 class AbstractRunWorker:
