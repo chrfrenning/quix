@@ -3,20 +3,121 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.distributed as dist
 import torch.multiprocessing as mp
+import torchvision as tv
 import os
+import errno
 
 from torch import Tensor
 from contextlib import nullcontext
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, default_collate
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import _LRScheduler as LRScheduler
 from torch.cuda.amp.grad_scaler import GradScaler
 from dataclasses import dataclass, field
 from typing import Tuple, Sequence, Optional, Dict, Any, ContextManager, Callable, Type
-from .cfg import RunConfig
+from .cfg import RunConfig, TMod, TDat, TOpt, TLog, TAug, TSch
 from .proc import BatchProcessor
 from .log import BaseLogHandler
+from .data import QuixDataset, parse_train_augs, parse_val_augs
+
+
+def main(cfg:RunConfig[TMod,TDat,TOpt,TLog,TAug,TSch]):
+    # Create logging output if it doesn't exist
+    if cfg.log.savedir is not None:
+        os.makedirs(cfg.log.savedir, exist_ok=True)
+    
+    #utils.init_distributed_model(cfg)
+    if cfg.log.stdout:
+        print(cfg)
+
+    if cfg.device == 'cuda':
+        main_device = torch.device(f'cuda:{cfg.use_devices[0]}')
+    else:
+        main_device = torch.device('cpu')
+    
+    # Load Augmentations
+    train_sample_augs, train_batch_augs = parse_train_augs(cfg.aug)
+    val_sample_augs = parse_val_augs(cfg.aug)
+
+    use_extensions = None
+    if cfg.dat.input_ext is not None or cfg.dat.target_ext is not None:
+        if cfg.dat.input_ext is not None and cfg.dat.target_ext is not None:
+            use_extensions = [*cfg.dat.input_ext, *cfg.dat.target_ext]
+        else:
+            raise ValueError('Both input_ext and target_ext must be set.')
+
+    traindata = QuixDataset(
+        cfg.dat.dataset, 
+        cfg.dat.data_path,
+        train=True,
+        override_extensions=use_extensions,
+    )
+    valdata = QuixDataset(
+        cfg.dat.dataset,
+        cfg.dat.data_path,
+        train=False,
+        override_extensions=use_extensions
+    )
+
+    num_classes = cfg.dat.num_classes
+    if cfg.dat.dataset == 'IN1k':
+        num_classes = 1000
+
+    # Map to correct tv_types if applicable
+    if traindata.supports_tv_tensor():
+        from torchvision import tv_tensors
+        from torchvision.transforms import v2
+
+        # Populate dict
+        tvt_dct = {
+            'image': v2.Compose([v2.ToImage(), v2.ToDtype(torch.float32, scale=True)]),
+            'mask': tv_tensors.Mask,
+            'bbox': tv_tensors.BoundingBoxes,
+            'other': nn.Identity()
+        }        
+        tv_types = [tvt_dct[d._default_tv] for d in traindata.decoders]
+        traindata = traindata.map_tuple(*tv_types)
+        valdata = valdata.map_tuple(*tv_types)
+
+
+    # Load Augmentations and map to samples
+    train_sample_augs, train_batch_augs = parse_train_augs(cfg.aug, num_classes)
+    val_sample_augs = parse_val_augs(cfg.aug, num_classes)
+    traindata = traindata.map(train_sample_augs)
+    valdata = valdata.map(val_sample_augs)
+
+    # Define default collate function
+    def train_collate_fn(batch):
+        return train_batch_augs(*default_collate(batch))
+
+    # TODO: Fix samplers!
+    trainloader = DataLoader(
+        traindata, 
+        cfg.batch_size, 
+        sampler=None,
+        num_workers=cfg.dat.workers,
+        prefetch_factor=cfg.dat.prefetch,
+        pin_memory=True,
+        collate_fn=train_collate_fn
+    )
+    valloader = DataLoader(
+        valdata, 
+        cfg.batch_size,
+        sampler=None,
+        num_workers=cfg.dat.workers,
+        prefetch_factor=cfg.dat.prefetch,
+        pin_memory=True,
+        collate_fn=default_collate
+    )
+
+    # Create Model
+    model = tv.models.get_model(cfg.mod.model, weights=cfg.mod.pretrained_weights, num_classes=num_classes)
+    model.to(main_device)
+
+    # if distributed
+
+    return traindata, trainloader, valdata, valloader
 
 
 class BatchTrainer:
@@ -154,121 +255,15 @@ def main_worker(rank:int, runworker:AbstractRunWorker):
 
 class RunHandler:
 
-    __default_kwargs = {
-        'mod': {},
-        'dat': {},
-        'opt': {},
-        'log': {},
-        'aug': {},
-        'sch': {},
-    }
-
     def __init__(
         self, 
         runworker:Type[AbstractRunWorker],
-        use_devices:Sequence[int],
-        epochs:int, 
-        batch_size:int,
-        modelname:str, 
-        dataname:str,
-        dataloc:str,
-        optname:str,
-        targetindices:Sequence[int]=[-1],
-        learning_rate:float=3e-3,
-        weight_decay:float=2e-2,
-        opt_epsilon:float=1e-7,
-        gradclip:float=1.0,
-        accumulation_steps:int=1,
-        amsgrad:bool=False,
-        logfreq:int=50,
-        savedir:str='./runlogs',
-        debugstdout:bool=False,
-        rrcscale:tuple[float,float]=(.08, 1.0),
-        rrcratio:tuple[float,float]=(.75, 4/3),
-        interpolation_modes:Sequence[str]=['all'],
-        hflip:bool=False,
-        vflip:bool=False,
-        aug3:bool=False,
-        randaug:str='none',
-        cutmix:bool=False,
-        mixup:bool=False,
-        lrsched:str='none',
-        wdsched:str='none',
+
         **_kwargs
     ):
         '''Parses and stores the parameters of a run.
-
-        NOTE: Most of the arguments are based on standard frameworks but can be extended by
-              adding keyword arguments in subdictionaries `mod, dat, aug, opt, sch, log` for
-              parsing model, data, optimizer, scheduler, and logging for the run.
-
-        Args:
-            use_devices (Sequence[int]): Sequence of device indices.
-            epochs (int): Number of epochs for run.
-            batch_size (int): Batch size per iteration.
-            modelname (int): Name of model, parsed using `parse_model`.
-            dataname (str): Dataset name, parsed using `parse_data`.
-            dataloc (str): Dataset location.
-            optname (str): Optimizer name, parsed using `parse_opt`.
-            targetindices (Sequence[int]): Indices from dataset that are to be used as targets.
-            learning_rate (float): Learning rate for optimizer.
-            weight_decay (float): Weight decay for optimizer.
-            opt_epsilon (float): Epsilon to use for optimizers with momentum est.
-            gradclip (float): Gradient clipping, defaults to 1.0.
-            accumulation_steps (int): Number of accumulation steps for each batch.
-            amsgrad (bool): Flag for using AMSGrad in optimizer.
-            logfreq (int): The logging interval in iterations.
-            savedir (str): Directory for checkpoints, logs, etc. Defaults to `./runlogs/`.
-            debugstdout (bool): Flag for enabling logging to stdout during training.
-            rrcscale (tuple[float, float]): Random resize crop scaling.
-            rrcratio (tuple[float, float]):  Random resize crop aspect ratio.
-            interpolation_modes (Sequence[str]): List of interpolation modes to use.
-            hflip (bool): Flag for enabling hflip.
-            vflip (bool): Flag for enabling vflip.
-            aug3 (bool): Flag for enabling 3augment from DEiTv3.
-            randaug (str): Randaug level, defaults to `none`.
-            cutmix (bool): Flag for enabling cutmix.
-            mixup (bool): Flag for enabling mixup.
-            lrsched (str): Type of learning rate scheduler to use.
-            lrsched (str): Type of weight decay scheduler to use.
         '''
         self.RunWorker:Type[AbstractRunWorker] = runworker
-        kwargs = {**self.__default_kwargs, **_kwargs}
-
-        # Initialize parameter container
-        self.cfg:RunConfig = RunConfig(
-            epochs,
-            batch_size, 
-            use_devices, 
-            targetindices,
-            self._getmaxlen(targetindices),
-            mod=_ModConfigContainer(
-                modelname
-            ),
-            dat=_DatConfigContainer(
-                dataname, dataloc, _AugConfigContainer(
-                    rrcscale, rrcratio, interpolation_modes, hflip, vflip,
-                    aug3, randaug, cutmix, mixup
-                )
-            ),
-            opt=_OptConfigContainer(
-                optname, learning_rate, weight_decay, opt_epsilon, gradclip, 
-                accumulation_steps, amsgrad, _SchConfigContainer(
-                    lrsched, wdsched
-                )
-            ),
-            log=_LogConfigContainer(
-                logfreq, savedir, debugstdout
-            ),
-        )
-
-        # Add non-default parameters / configs
-        self.cfg.mod.add_attr(**kwargs['mod'])
-        self.cfg.dat.add_attr(**kwargs['dat'])
-        self.cfg.dat.aug.add_attr(**kwargs['aug'])
-        self.cfg.opt.add_attr(**kwargs['opt'])
-        self.cfg.opt.sch.add_attr(**kwargs['sch'])
-        self.cfg.log.add_attr(**kwargs['log'])
 
     def _getmaxlen(self, targetindices):
         max_positive = max((index for index in targetindices if index >= 0), default=-1)

@@ -1,136 +1,142 @@
-'''Quix Config
-
-Quix provides an extendable method to construct an config file for training 
-by defining custom dataclasses. Each dataclass represents a group of related 
-configuration parameters, and each field within the dataclass 
-corresponds to a run parameter. 
-
-The module is designed to be flexible and easily extendable to accommodate 
-different configurations required for training PyTorch models. This is done by
-simply subclassing one of the 6 config groups, organized as
-
-RunConfig
-    mod (ModelConfig)
-    dat (DataConfig)
-    opt (OptimizerConfig)
-    aug (AugmentationConfig)
-    sch (SchedulerConfig)
-    log (LogConfig)
-
-All of these can be subclassed with dataclass-style fields, and passed
-to a RunConfig to construct and parse your config easily. 
-
-Examples:
-To extend the command-line arguments for custom use cases in PyTorch model training, 
-you can subclass an existing configuration dataclass. Here's an example:
-
-1. **Subclass a Config Class**:
-   Quix provides a base dataclass for model configurations, `ModelConfig`, and 
-   you now want to add additional arguments specific to a new model. You do this by 
-   writing a subclass:
-
-    ```python
-    from quix.cfg import ModelConfig, add_argument
-
-    class MyModelConfig(Model Config):
-    """MyModelConfig.
-
-    Attributes
-    ----------
-    foo : str
-        The foo for the model.
-    bar : int
-        Number of bars for model.
-    flag : bool
-        Turning on the flag.
-    """
-        # Providing a NumPy docstring will necessarily
-        # set the descriptions automagically for the parser!
-
-        foo: str = "MyPrecious"
-        bar: int = 42
-        flag : bool = add_argument(default=False, action='store_true')
-    ```
-    Note that to add custom argparse commands, we use the add_argument 
-    function, more or less mirroring the argparse syntax in Python.
-
-
-2. **Usage**:
-    To apply your config, you can simply do:
-
-    ```python
-    runconfig = RunConfig.argparse(modcfg=MyModelConfig)
-    # Now, runconfig includes foo, bar and flag along with base configurations.
-    ```
-
-    If MyModel is missing docstring elements or include docstring elements not
-    present in the classes, a warning is thrown by the parser.
-
-
-3. **Config file**: 
-    Let us assume you want to provide a custom configuration file for your 
-    experiments instead of passing arguments to your training script. First, we 
-    construct a YAML file `maincfg.yml`:
-
-    ```yaml
-    model: torch.ViT-B16
-    data: IN1k
-    data-path: /path/to/data/
-    lr: 1e-3
-    new_arg2: 33 
-    ```
-
-    This can then be passed to the script by doing
-
-    ```bash
-    python train.py --cfg maincfg.yml
-    ```
-    
-    This will parse your RunConfig replacing the defaults using the YAML file.
-    Now, you might have a sub-experiment where you want to change just a single parameter 
-    for your run. No prob, Bob, Quix allows you to pass nested experiment configurations.
-    We construct `exp1.yml`:
-
-    ```yaml
-    runid: vitbase_experiment1
-    lr: 2e-3
-    new_arg2: 50
-    new_arg1: 1.5
-    ```
-
-    and pass this to our script as
-
-    ```bash
-    python train.py --cfg maincfg.yml exp1.yml
-    ```
-
-    Now the RunConfig is parsed with the updated config in `exp1.yml`.
-
-Quix allows for quite extensive modularity in defining and customizing the 
-configuration for different PyTorch models or training scenarios, without 
-modifying the original base configuration classes. It also allows for nested 
-structure in your configuration files for running multiple experiments with 
-your code.
 '''
+Quix Config
+===========
 
+This module, "Quix Config," provides an extendable framework for constructing
+configuration files for PyTorch model training. It uses custom dataclasses where
+each represents a group of related configuration parameters, and each field within 
+the dataclass corresponds to a specific run parameter.
+
+The module's design emphasizes flexibility and extendability for various training 
+configurations in PyTorch. This is achieved by subclassing one of the six config groups:
+`RunConfig`, `ModelConfig`, `DataConfig`, `OptimizerConfig`, `AugmentationConfig`,
+`SchedulerConfig`, and `LogConfig`. Each group can be extended with dataclass-style
+fields and passed to a `RunConfig` for easy construction and parsing of configurations.
+
+Classes
+-------
+ModelConfig : Base dataclass for model configurations.
+DataConfig : Configuration settings for data handling.
+OptimizerConfig : Configuration settings for the optimizer.
+LogConfig : Configuration settings for logging.
+AugmentationConfig : Configuration settings for data augmentation.
+SchedulerConfig : Configuration settings for the learning rate scheduler.
+RunConfig : Aggregates different configuration aspects into a unified configuration object.
+
+Functions
+---------
+add_argument : Adds custom arguments to configuration classes.
+_parse_docstring : Parses docstrings to extract descriptions.
+_extract_metadata : Extracts metadata from class docstrings.
+_repr_helper : Helper method for representing nested dataclasses.
+
+Examples
+--------
+1. **Subclassing a Config Class**:
+   Extend `ModelConfig` to add custom arguments for a new model:
+
+   ```python
+   from quix.cfg import ModelConfig, add_argument
+
+   class MyModelConfig(ModelConfig):
+       """MyModelConfig.
+
+       Attributes
+       ----------
+       foo : str
+           The foo for the model.
+       bar : int
+           Number of bars for model.
+       flag : bool
+           Turning on the flag.
+       """
+
+       foo: str = "MyPrecious"
+       bar: int = 42
+       flag: bool = add_argument(default=False, action='store_true')
+   ```
+
+2. **Using the Custom Config**:
+   Apply your config in `RunConfig`:
+
+   ```python
+   runconfig = RunConfig.argparse(modcfg=MyModelConfig)
+   ```
+
+3. **Config File Usage**:
+   Use a YAML file for configurations:
+
+   ```bash
+   python train.py --cfg maincfg.yml
+   ```
+
+   For sub-experiments with different parameters:
+
+   ```bash
+   python train.py --cfg maincfg.yml exp1.yml
+   ```
+
+This module allows for extensive modularity in defining and customizing configurations 
+for different PyTorch models or training scenarios, without modifying the original base 
+configuration classes. It also supports nested structures in configuration files.
+
+Author
+------
+Marius Aasan <mariuaas@ifi.uio.no>
+
+Contributors
+------------
+Please consider contributing to the project.
+'''
 from __future__ import annotations
 import inspect
 import warnings
 import os
 import json
 import yaml
-from argparse import ArgumentParser, Namespace
+from argparse import ArgumentParser, Namespace, ArgumentError, ArgumentTypeError
 from numpydoc.docscrape import NumpyDocString
 from dataclasses import dataclass, field, fields, is_dataclass, _MISSING_TYPE
 from typing import (
-    Type, TypeVar, Generic, Any, Dict, Optional, ClassVar, 
-    Sequence, Tuple, get_type_hints,
+    Type, TypeVar, Generic, Any, Dict, Optional, ClassVar, Union,
+    Sequence, List, Tuple, get_type_hints, get_args, get_origin
 )
 
-def add_argument(**kwargs) -> Any:
+def add_argument(**kwargs):
+    '''Quix parsing method to add arguments.
+
+    Provides an API similar to argparse.ArgumentParser's add_argument.
+    NOTE: `dest` arguments are currently incompatible with Quix parser.
+    '''
     if 'default' in kwargs:
-        return field(default=kwargs['default'], metadata=kwargs)
+        default_value = kwargs['default']
+        default_type = type(default_value)
+        if type(default_value) in [list, dict, set]:
+            return field(default_factory=default_type, metadata=kwargs)
+        return field(default=default_value, metadata=kwargs)
     return field(metadata=kwargs)
+
+
+def _unified_parser(value:str, types:Sequence[Type], base_types:Sequence[Type], descr:str):
+    '''Helper method to parse Union / Base types.
+    '''
+    for t in types:
+        if t in base_types:
+            try:
+                return t(value)
+            except ValueError:
+                continue
+        elif get_origin(t) is Union:
+            return _unified_parser(value, get_args(t), base_types, descr)
+    raise ArgumentTypeError(f"Value '{value}' is not valid for {descr}")
+
+
+def _get_parser(types:Sequence[Type], base_types:Sequence[Type], descr:str):
+    '''Factory method for constructing unified parsers.
+    '''
+    def _parser(x):
+        return _unified_parser(x, types, base_types, descr)
+    return _parser
 
 
 def _repr_helper(obj:Any, indent:int=0) -> str:
@@ -177,6 +183,11 @@ def metadata_decorator(cls):
     This function acts on dataclasses to embed docstring
     descriptions into field metadata. This is later passed to the
     arparser for parsing a config file.
+
+    Parameters
+    ----------
+    cls
+        A class instance for the metatype decorator
     '''
     metadata_dict = _extract_metadata(cls)
     dataclass_fields = {f.name for f in fields(cls)}
@@ -233,7 +244,7 @@ class ModelConfig(_BaseConfig):
     '''
     model: str
     use_torch_zoo: bool = True
-    use_timm_zoo: bool = add_argument(default=False, action='store_true')
+    use_timm_zoo: bool = add_argument(default=False, action='store_true') # TODO: Make example instead of default
     pretrained_weights: Optional[str] = None
     sync_bn: bool = False
 
@@ -243,19 +254,28 @@ class DataConfig(_BaseConfig):
 
     Attributes
     ----------
-        data : str
-            Dataset name.
-        data_path : str
-            Dataset path.
-        workers : int
-            Number of workers for dataloader.
-        prefetch : int
-            Prefetch factor for dataloader.
+    data_path : str
+        Dataset path.
+    dataset : str
+        Dataset name.
+    workers : int
+        Number of workers for dataloader.
+    prefetch : int
+        Prefetch factor for dataloader.
+    input_ext : str
+        Extensions for inputs in dataset.
+    target_ext : str
+        Extensions for targets in dataset.
+    num_classes : int
+        Number of classes.
     '''
-    data:str
     data_path:str
+    dataset:str = 'IN1k'
     workers:int = 16
     prefetch:int = 2
+    input_ext:List[str] = add_argument(default=None, nargs='+')
+    target_ext:List[str] = add_argument(default=None, nargs='+')
+    num_classes:Optional[int] = None
 
 
 class OptimizerConfig(_BaseConfig):
@@ -263,30 +283,36 @@ class OptimizerConfig(_BaseConfig):
 
     Attributes
     ----------
-        optim : str
-            Name of the optimizer to use.
-        lr : float
-            Learning rate [base/peak].
-        weight_decay : float
-            Weight decay.
-        bias_decay : float
-            Weight decay for bias.
-        norm_decay : float
-            Weight decay for norm layers.
-        emb_decay : float
-            Weight decay for transformer embeddings.
-        opt_epsilon : float
-            Epsilon for optimizer momentum.
-        gradclip : float
-            Gradient norm clipping.
-        accumulation_steps : int
-            Gradient accumulation steps.
-        amsgrad : bool
-            Flag for the use of AMSGrad.
-        amp : bool
-            Use Automatic Mixed Precision.
-        consistent_batch_size : bool
-            Use consistent batch size in train/val.
+    optim : str
+        Name of the optimizer to use.
+    lr : float
+        Learning rate [base/peak].
+    weight_decay : float
+        Weight decay.
+    bias_decay : float
+        Weight decay for bias.
+    norm_decay : float
+        Weight decay for norm layers.
+    emb_decay : float
+        Weight decay for transformer embeddings.
+    opt_epsilon : float
+        Epsilon for optimizer momentum.
+    gradclip : float
+        Gradient norm clipping.
+    accumulation_steps : int
+        Gradient accumulation steps.
+    amsgrad : bool
+        Flag for the use of AMSGrad.
+    model_ema : bool 
+        Use model exponential moving average [EMA]
+    model_ema_steps : int
+        Number of steps for model EMA
+    model_ema_decay : float
+        Decay for model EMA
+    amp : bool
+        Use Automatic Mixed Precision.
+    consistent_batch_size : bool
+        Use consistent batch size in train/val.
     '''
     optim:str = 'adamw'
     lr:float = 3e-3
@@ -298,6 +324,9 @@ class OptimizerConfig(_BaseConfig):
     gradclip:float = 1.0
     accumulation_steps:int = 1
     amsgrad:bool = add_argument(default=False, action='store_true')
+    model_ema:bool = add_argument(default=False, action='store_true')
+    model_ema_steps:int = 32
+    model_ema_decay:float = 0.9998
     amp:bool = add_argument(default=False, action='store_true')
     consistent_batch_size:bool = True
 
@@ -307,16 +336,16 @@ class LogConfig(_BaseConfig):
 
     Attributes
     ----------
-        savedir : str
-            Directory for logs and model checkpoints.
-        logfreq : int
-            Logging frequency [in iterations].
-        stdout : bool
-            Flag to print logs to stdout.
-        custom_runid : Optional[str]
-            Custom run id for logging.
-        use_neptune : bool
-            Flag to use Neptune logging [requires defined API key].
+    savedir : str
+        Directory for logs and model checkpoints.
+    logfreq : int
+        Logging frequency [in iterations].
+    stdout : bool
+        Flag to print logs to stdout.
+    custom_runid : Optional[str]
+        Custom run id for logging.
+    use_neptune : bool
+        Flag to use Neptune logging [requires defined API key].
     '''
     savedir:str = './runlogs'
     logfreq:int = 50
@@ -330,36 +359,51 @@ class AugmentationConfig(_BaseConfig):
 
     Attributes
     ----------
-        rrc_scale : tuple[float, float] 
-            RandomResizeCrop scale.
-        rrc_ratio : tuple[float, float] 
-            RandomResizeCrop ratio.
-        interpolation_modes : Union[str, Sequence[str]]
-            Interpolation modes for augmentations.
-        hflip : bool
-            Use horizontal flip augmentation.
-        vflip : bool
-            Use vertical flip augmentation.
-        aug3 : bool
-            Use 3Augment.
-        randaug : str
-            RandAug level.
-        cutmix_alpha : float
-            CutMix alpha.
-        mixup_alpha : float
-            MixUp alpha.
+    img_size : int
+        Image size used for training.
+    val_size : Optional[int]
+        Set explicit image size for validation.
+    rrc_scale : tuple[float, float] 
+        RandomResizeCrop scale.
+    rrc_ratio : tuple[float, float] 
+        RandomResizeCrop ratio.
+    intp_modes : List[str]
+        Interpolation modes for augmentations.
+    hflip : bool
+        Use horizontal flip augmentation.
+    vflip : bool
+        Use vertical flip augmentation.
+    jitter : bool
+        Use color jitter.
+    aug3 : bool
+        Use 3Augment.
+    randaug : str
+        RandAug level.
+    cutmix_alpha : float
+        CutMix alpha.
+    mixup_alpha : float
+        MixUp alpha.
+    ra_sampler : bool
+        Use repeated augmentation sampler.
+    ra_reps : int
+        Number of repeated augmentations for RASampler.
     '''
-    rrc_scale:Tuple[float,float] = (.08, 1.0)
-    rrc_ratio:Tuple[float,float] = (.75, 4/3)
-    interpolation_modes:str = add_argument(
-        default='all', nargs='*', choices=['nearest', 'bilinear', 'bicubic']
+    img_size:int = 224
+    val_size:Optional[int] = None
+    rrc_scale:Tuple[float,float] = add_argument(default=(.08, 1.0), nargs=2)
+    rrc_ratio:Tuple[float,float] = add_argument(default=(.75, 4/3), nargs=2)
+    intp_modes:str = add_argument(
+        default=['nearest', 'bilinear', 'bicubic'], nargs='*', choices=['nearest', 'bilinear', 'bicubic']
     )
-    hflip:bool = add_argument(default=False, action='store_true')
+    hflip:bool = True
     vflip:bool = add_argument(default=False, action='store_true')
+    jitter:bool = True
     aug3:bool = add_argument(default=False, action='store_true')
     randaug:str = add_argument(default='medium', choices=['none', 'light', 'medium', 'strong'])
     cutmix_alpha:float = 0.0
     mixup_alpha:float = 0.0
+    ra_sampler:bool = add_argument(default=False, action='store_true')
+    ra_reps:int = 2
 
 
 class SchedulerConfig(_BaseConfig):
@@ -367,14 +411,14 @@ class SchedulerConfig(_BaseConfig):
 
     Attributes
     ----------
-        lr_scheduler : str
-            Learning rate scheduler type.
-        lr_warmup_epochs : int
-            Scheduler warmup epochs.
-        lr_min : float
-            Learning rate scheduler minimum value.
-        lr_init : float
-            Learning rate scheduler initial value.
+    lr_scheduler : str
+        Learning rate scheduler type.
+    lr_warmup_epochs : int
+        Scheduler warmup epochs.
+    lr_min : float
+        Learning rate scheduler minimum value.
+    lr_init : float
+        Learning rate scheduler initial value.
     '''
     lr_scheduler:str = 'cosinedecay'
     lr_warmup_epochs:int = 5
@@ -419,12 +463,12 @@ class RunConfig(Generic[TMod,TDat,TOpt,TLog,TAug,TSch]):
         Flag for only performing testing / validation.
     device : str
         Device type for training ['cuda' or 'cpu']. 
-    use_devices : Sequence
-        t]): List of device IDs to use for training. 
+    use_devices : List[int]
+        List of device IDs to use for training.
     ddp_backend : str
         Distributed Data Parallel [DDP] backend. 
-    ddp_init_method : str
-        Initialization method for DDP process group. 
+    ddp_url : str
+        URL for DDP process group. 
     ddp_master_address : str
         IP address for MASTER_ADDR [DDP]. 
     ddp_master_port : str
@@ -437,14 +481,14 @@ class RunConfig(Generic[TMod,TDat,TOpt,TLog,TAug,TSch]):
     log:TLog = add_argument(no_parse=True)
     aug:TAug = add_argument(no_parse=True)
     sch:TSch = add_argument(no_parse=True)
-    cfg:str = add_argument(default=None, action='append')
+    cfg:str = add_argument(default=[], nargs='*')
     batch_size:int = 2048
     epochs:int = 300
     test_only:bool = add_argument(default=False, action='store_true')
     device:str = add_argument(default='cuda', choices=['cuda', 'cpu'])
-    use_devices:Sequence[int] = (0,)
+    use_devices:List[int] = add_argument(default=[0], nargs='*')
     ddp_backend:str = 'nccl'
-    ddp_init_method:str = 'env://'
+    ddp_url:str = 'env://'
     ddp_master_address:str = 'localhost'
     ddp_master_port:str = '29500'
 
@@ -479,6 +523,7 @@ class RunConfig(Generic[TMod,TDat,TOpt,TLog,TAug,TSch]):
         logcfg:Type[TLog]=LogConfig,            # type: ignore
         augcfg:Type[TAug]=AugmentationConfig,   # type: ignore
         schcfg:Type[TSch]=SchedulerConfig,      # type: ignore
+        base_types:Sequence[Type]=[int, float, complex, str, bool]
     ) -> ArgumentParser:
         '''Constructs an ArgumentParser from provided configuration dataclasses.
 
@@ -515,14 +560,25 @@ class RunConfig(Generic[TMod,TDat,TOpt,TLog,TAug,TSch]):
         loggrp = parser.add_argument_group('log')
         auggrp = parser.add_argument_group('aug')
         schgrp = parser.add_argument_group('sch')
-
+            
         # --- Add Arguments from Config Classes ---
         grppairs = [
             (parser, RunConfig),
             (modgrp, modcfg), (datgrp, datcfg), (optgrp, optcfg), 
             (loggrp, logcfg), (auggrp, augcfg), (schgrp, schcfg)
         ]
-        droptypes = [Type[TMod],Type[TDat],Type[TOpt],Type[TLog],Type[TAug],Type[TSch]]
+        
+        def _kwargs(name, type_hint, **metadata):
+            if 'action' in metadata:
+                return metadata
+            origin = get_origin(type_hint)
+            args = get_args(type_hint)
+            descr = f'{name} ({type_hint})'
+            types = args if origin in [Union, List, list, Tuple, tuple, Optional] else [type_hint]
+            type_fn = _get_parser(types, base_types, descr)
+            nargs = metadata.pop('nargs', {List:'*', Tuple:len(args), Optional:'?'}.get(origin, None))
+            return {'type': type_fn, 'nargs':nargs, **metadata}
+
         for arggrp, argcfg in grppairs:
             type_hints = get_type_hints(argcfg)
             for fld in fields(argcfg):
@@ -530,10 +586,8 @@ class RunConfig(Generic[TMod,TDat,TOpt,TLog,TAug,TSch]):
                     name = '--' + fld.name.replace('_', '-')
                     if fld.metadata.get('no_parse', False):
                         pass
-                    elif not 'action' in fld.metadata:
-                        arggrp.add_argument(name, type=type_hints[fld.name], **fld.metadata)
                     else:
-                        arggrp.add_argument(name, **fld.metadata)
+                        arggrp.add_argument(name, **_kwargs(fld.name, type_hints[fld.name], **fld.metadata))
 
         return parser    
     
@@ -683,6 +737,7 @@ class RunConfig(Generic[TMod,TDat,TOpt,TLog,TAug,TSch]):
             parser.error(f"Missing required arguments: {', '.join(missing_args)}")
 
         return cls.from_namespace(args, *allcfgs)
+
 
 if __name__ == '__main__':
     class MyModelConfig(ModelConfig):

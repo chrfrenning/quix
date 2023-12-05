@@ -46,10 +46,10 @@ from quix.cfg import (
 class TestArgparseParsing(unittest.TestCase):
 
     def test_default_argparse_parsing(self):
-        test_args = ['--model', 'test_model', '--data', 'mydataset', '--data-path', '/test/dir']
+        test_args = ['--model', 'test_model', '--dataset', 'mydataset', '--data-path', '/test/dir']
         config = RunConfig.argparse(_testargs=test_args)
         self.assertEqual(config.mod.model, 'test_model')
-        self.assertEqual(config.dat.data, 'mydataset')
+        self.assertEqual(config.dat.dataset, 'mydataset')
         self.assertEqual(config.dat.data_path, '/test/dir')
         # TODO: Add more assertions for other fields
 
@@ -70,7 +70,7 @@ class TestArgparseParsing(unittest.TestCase):
         test_args = ['--cfg', jsonpath]
         config = RunConfig.argparse(_testargs=test_args)
         self.assertEqual(config.mod.model, 'MyModel')
-        self.assertEqual(config.dat.data, 'MyData')
+        self.assertEqual(config.dat.dataset, 'MyData')
         self.assertEqual(config.dat.data_path, '/work2/litdata/')
         # TODO: Add more assertions
 
@@ -82,7 +82,7 @@ class TestArgparseParsing(unittest.TestCase):
         test_args = ['--cfg', jsonpath]
         config = RunConfig.argparse(_testargs=test_args)
         self.assertEqual(config.mod.model, 'MyModel')
-        self.assertEqual(config.dat.data, 'MyData')
+        self.assertEqual(config.dat.dataset, 'MyData')
         self.assertEqual(config.dat.data_path, '/work2/litdata/')
         # TODO: Add more assertions
 
@@ -100,7 +100,7 @@ class TestArgparseParsing(unittest.TestCase):
             milkshake:str = 'Better than yours'
             damnright:int = 100000
 
-        test_args = ['--model', 'test_model', '--data', 'mydataset', '--data-path', '/test/dir']
+        test_args = ['--model', 'test_model', '--dataset', 'mydataset', '--data-path', '/test/dir']
         config = RunConfig.argparse(modcfg=MyModelConfig, _testargs=test_args)
         self.assertEqual(config.mod.milkshake, 'Better than yours')
         yours : int = 0

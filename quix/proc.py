@@ -18,9 +18,6 @@ TensorSequence = Union[Tensor, Sequence[Tensor]]
 
 class _AbstractBatchProcessor:
 
-    '''AbstractBatchProcessor defines interface for BatchProcessor.
-    '''
-
     def __init__(self):
         raise NotImplementedError()
 
@@ -84,23 +81,36 @@ class BatchProcessor(_AbstractBatchProcessor):
     rate scheduling. It supports mixed precision training with gradient scaling, 
     gradient accumulation for larger effective batch sizes, and customizable logging.
 
-    Attributes:
-        optimizer (Optimizer): The optimizer used for updating model parameters.
-        scheduler (Optional[LRScheduler]): Learning rate scheduler.
-        scaler (Optional[GradScaler]): Gradient scaler for mixed precision training.
-        accumulation_steps (int): Number of steps to accumulate gradients over.
-        gradient_clipping (Optional[float]): Threshold for gradient clipping.
-        logger (Optional[BaseLogHandler]): Logger for recording training metrics.
-        consistent_batch_size (bool): If True, normalizes batch sizes as much as possible.
+    Attributes
+    ----------
+    optimizer : Optimizer
+        The optimizer used for updating model parameters.
+    scheduler : Optional[LRScheduler]
+        Learning rate scheduler.
+    scaler : Optional[GradScaler]
+        Gradient scaler for mixed precision training.
+    accumulation_steps : int
+        Number of steps to accumulate gradients over.
+    gradient_clipping : Optional[float]
+        Threshold for gradient clipping.
+    logger : Optional[BaseLogHandler]
+        Logger for recording training metrics.
+    consistent_batch_size : bool
+        If True, normalizes batch sizes as much as possible.
     
-    Methods:
-        backward(loss: Tensor): Performs the backward pass on the given loss.
-        clip_gradients(): Applies gradient clipping if set.
-        optimizer_step(): Performs an optimizer step and checks if it's skipped.
-        scheduler_step(step_skipped): Steps the scheduler if the optimizer step wasn't skipped.
-        __call__(epoch, iteration, loss, inputs, outputs, targets, final_batch, context, **logging_kwargs):
-            Executes the optimization steps for the current batch and logs the results.
-    '''    
+    Methods
+    -------
+    backward(loss: Tensor)
+        Performs the backward pass on the given loss.
+    clip_gradients()
+        Applies gradient clipping if set.
+    optimizer_step()
+        Performs an optimizer step and checks if it's skipped.
+    scheduler_step(step_skipped)
+        Steps the scheduler if the optimizer step wasn't skipped.
+    __call__(epoch, iteration, loss, inputs, outputs, targets, final_batch, context, **logging_kwargs)
+        Executes the optimization steps for the current batch and logs the results.
+    '''
 
     def __init__(
         self,
@@ -114,14 +124,22 @@ class BatchProcessor(_AbstractBatchProcessor):
     ):
         '''Initializes the BatchProcessor with the specified parameters.
 
-        Args:
-            optimizer (Optimizer): The optimizer used for updating model parameters.
-            scheduler (Optional[LRScheduler]): Learning rate scheduler.
-            scaler (Optional[GradScaler]): Gradient scaler for mixed precision training.
-            accumulation_steps (int): Number of steps to accumulate gradients over.
-            gradient_clipping (Optional[float]): Threshold for gradient clipping.
-            logger (Optional[BaseLogHandler]): Logger for recording training metrics.
-            consistent_batch_size (bool): If True, normalizes batch sizes as much as possible.
+        Parameters
+        ----------
+        optimizer : Optimizer
+            The optimizer used for updating model parameters.
+        scheduler : Optional[LRScheduler]
+            Learning rate scheduler.
+        scaler : Optional[GradScaler]
+            Gradient scaler for mixed precision training.
+        accumulation_steps : int
+            Number of steps to accumulate gradients over.
+        gradient_clipping : Optional[float]
+            Threshold for gradient clipping.
+        logger : Optional[BaseLogHandler]
+            Logger for recording training metrics.
+        consistent_batch_size : bool
+            If True, normalizes batch sizes as much as possible.
         '''
         self.optimizer = optimizer
         self._scheduler = scheduler
@@ -140,8 +158,10 @@ class BatchProcessor(_AbstractBatchProcessor):
     def backward(self, loss:Tensor) -> None:
         '''Performs the backward pass for the given loss.
 
-        Args:
-            loss (Tensor): The loss tensor to perform backward pass on.
+        Parameters
+        ----------
+        loss : Tensor
+            The loss tensor to perform backward pass on.
         '''
         if self._scaler is None:
             loss.backward()
@@ -160,8 +180,10 @@ class BatchProcessor(_AbstractBatchProcessor):
     def optimizer_step(self) -> bool:
         '''Performs an optimizer step and checks if it's skipped.
 
-        Returns:
-            bool: True if the optimizer step was skipped, otherwise False.
+        Returns
+        -------
+        bool
+            True if the optimizer step was skipped, otherwise False.
         '''
         step_skipped = False
         if self._scaler is not None:
@@ -179,11 +201,15 @@ class BatchProcessor(_AbstractBatchProcessor):
     def scheduler_step(self, step_skipped) -> Optional[float]:
         '''Performs a scheduler step if the optimizer step wasn't skipped.
 
-        Args:
-            step_skipped (bool): Indicates whether the optimizer step was skipped.
+        Parameters
+        ----------
+        step_skipped : bool
+            Indicates whether the optimizer step was skipped.
 
-        Returns:
-            Optional[float]: The current learning rate after stepping the scheduler, or None.
+        Returns
+        -------
+        Optional[float]
+            The current learning rate after stepping the scheduler, or None.
         '''
         if self._scheduler is not None and not step_skipped:
             cur_lr = self._scheduler.get_last_lr()[0]
@@ -229,16 +255,26 @@ class BatchProcessor(_AbstractBatchProcessor):
     ) -> None:
         '''Executes the optimization process for the current batch and logs results.
 
-        Args:
-            epoch (int): The current epoch number in the training loop.
-            iteration (int): The current iteration number in the training loop.
-            loss (Tensor): The loss tensor for the current batch.
-            inputs (Optional[TensorSequence]): Input tensors for the current batch.
-            outputs (Optional[TensorSequence]): Output tensors for the current batch.
-            targets (Optional[TensorSequence]): Target tensors for the current batch.
-            final_batch (bool): Indicates whether it's the final batch of the epoch.
-            context (ContextManager): A context manager for the optimization process.
-            **logging_kwargs: Additional keyword arguments for logging.
+        Parameters
+        ----------
+        epoch : int
+            The current epoch number in the training loop.
+        iteration : int
+            The current iteration number in the training loop.
+        loss : Tensor
+            The loss tensor for the current batch.
+        inputs : Optional[TensorSequence]
+            Input tensors for the current batch.
+        outputs : Optional[TensorSequence]
+            Output tensors for the current batch.
+        targets : Optional[TensorSequence]
+            Target tensors for the current batch.
+        final_batch : bool
+            Indicates whether it's the final batch of the epoch.
+        context : ContextManager
+            A context manager for the optimization process.
+        **logging_kwargs
+            Additional keyword arguments for logging.
         '''
         step_skipped = training
         if training:
@@ -273,22 +309,32 @@ class BatchProcessor(_AbstractBatchProcessor):
         training:bool=True,
         **logging_kwargs
     ) -> _BatchProcessingContext:
-        '''
-        Creates and returns an optimization context for a batch training step.
+        '''Creates and returns an optimization context for a batch training step.
 
-        Args:
-            epoch (int): Current epoch number.
-            iteration (int): Current iteration number within the epoch.
-            inputs (Optional[TensorSequence]): Inputs for the current batch, used for logging.
-            targets (Optional[TensorSequence]): Targets for the current batch, used for logging.
-            final_batch (bool): Indicates whether this is the final batch of the epoch, optional.
-            context (ContextManager): A context manager for additional context handling, optional.
-            **logging_kwargs: Additional keyword arguments for logging purposes.
+        Parameters
+        ----------
+        epoch : int
+            Current epoch number.
+        iteration : int
+            Current iteration number within the epoch.
+        inputs : Optional[TensorSequence]
+            Inputs for the current batch, used for logging.
+        targets : Optional[TensorSequence]
+            Targets for the current batch, used for logging.
+        final_batch : bool
+            Indicates whether this is the final batch of the epoch, optional.
+        context : ContextManager
+            A context manager for additional context handling, optional.
+        **logging_kwargs
+            Additional keyword arguments for logging purposes.
 
-        Returns:
-            _BatchProcessingContext: An instance of the optimization context.
+        Returns
+        -------
+        _BatchProcessingContext
+            An instance of the optimization context.
 
-        Example:
+        Example
+        -------
         ```
         for epoch in range(num_epochs):
             for iteration, (inputs, targets) in enumerate(dataloader):
