@@ -5,6 +5,7 @@ import torch.distributed as dist
 import torch.multiprocessing as mp
 import torchvision as tv
 import os
+import time
 import errno
 
 from torch import Tensor
@@ -20,8 +21,34 @@ from .cfg import RunConfig, TMod, TDat, TOpt, TLog, TAug, TSch
 from .proc import BatchProcessor
 from .log import BaseLogHandler
 from .data import QuixDataset, parse_train_augs, parse_val_augs
+from .sched import CosineDecay
 
 
+'''
+TODO: 
+- Expand main script to DDP
+- Parts:
+    Init distributed framework and initialize logging folder.
+    Init augmentations.
+    Init data.
+    Init model.
+    Init loss function.
+    Setup parameter groups
+    Init optimizer.
+    Init scaler
+    Init scheduler
+    Init EMA
+    Setup DDP model
+    Load checkpoints, if existing
+
+Each of these needs to be added to the parsing pipeline.
+Need to setup robust loading of distributed params from os.environ, including slurm.
+
+Finally:
+    Init BatchProcessor
+    Init TrainLoop / ValLoop
+    Run train / eval using all components.
+'''
 def main(cfg:RunConfig[TMod,TDat,TOpt,TLog,TAug,TSch]):
     # Create logging output if it doesn't exist
     if cfg.log.savedir is not None:
@@ -40,6 +67,7 @@ def main(cfg:RunConfig[TMod,TDat,TOpt,TLog,TAug,TSch]):
     train_sample_augs, train_batch_augs = parse_train_augs(cfg.aug)
     val_sample_augs = parse_val_augs(cfg.aug)
 
+    # Load Data
     use_extensions = None
     if cfg.dat.input_ext is not None or cfg.dat.target_ext is not None:
         if cfg.dat.input_ext is not None and cfg.dat.target_ext is not None:
@@ -81,9 +109,7 @@ def main(cfg:RunConfig[TMod,TDat,TOpt,TLog,TAug,TSch]):
         valdata = valdata.map_tuple(*tv_types)
 
 
-    # Load Augmentations and map to samples
-    train_sample_augs, train_batch_augs = parse_train_augs(cfg.aug, num_classes)
-    val_sample_augs = parse_val_augs(cfg.aug, num_classes)
+    # Map Augmentations
     traindata = traindata.map(train_sample_augs)
     valdata = valdata.map(val_sample_augs)
 
@@ -115,7 +141,143 @@ def main(cfg:RunConfig[TMod,TDat,TOpt,TLog,TAug,TSch]):
     model = tv.models.get_model(cfg.mod.model, weights=cfg.mod.pretrained_weights, num_classes=num_classes)
     model.to(main_device)
 
-    # if distributed
+    if cfg.mod.sync_bn: # Add test for distributed...
+        model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
+
+    # Simple example for now
+    loss_fn = nn.CrossEntropyLoss(label_smoothing=cfg.opt.smoothing)
+
+    # Set up weight decay
+    norm_classes = (
+        torch.nn.modules.batchnorm._BatchNorm,
+        torch.nn.LayerNorm,
+        torch.nn.GroupNorm,
+        torch.nn.modules.instancenorm._InstanceNorm,
+        torch.nn.LocalResponseNorm,
+    )
+    params = {
+        "other": [],
+        "norm": [],
+    }
+    params_weight_decay = {
+        "other": cfg.opt.weight_decay,
+        "norm": cfg.opt.norm_decay,
+    }
+    custom_keys = []
+    for k, v in zip(cfg.opt.custom_decay_keys, cfg.opt.custom_decay_vals):
+        if v > 0:
+            params[k] = []
+            params_weight_decay[k] = v
+            custom_keys.append(k)
+
+    def _add_params(module, prefix=""):
+        for name, p in module.named_parameters(recurse=False):
+            if not p.requires_grad:
+                continue
+            is_custom_key = False
+            for key in custom_keys:
+                target_name = f"{prefix}.{name}" if prefix != "" and "." in key else name
+                if key == target_name:
+                    params[key].append(p)
+                    is_custom_key = True
+                    break
+            if not is_custom_key:
+                if cfg.opt.norm_decay > 0 and isinstance(module, norm_classes):
+                    params["norm"].append(p)
+                else:
+                    params["other"].append(p)
+
+        for child_name, child_module in module.named_children():
+            child_prefix = f"{prefix}.{child_name}" if prefix != "" else child_name
+            _add_params(child_module, prefix=child_prefix)
+
+    _add_params(model)
+
+    parameters = []
+    for key in params:
+        if len(params[key]) > 0:
+            parameters.append({"params": params[key], "weight_decay": params_weight_decay[key]})
+
+    # Parsing optimizer, just an example
+    if cfg.opt.optim not in ['adamw']:
+        raise ValueError('Yeah, there is no other option yet.')
+    
+    optimizer = torch.optim.AdamW(parameters, lr=cfg.opt.lr, weight_decay=cfg.opt.weight_decay)
+
+    # Parsing scaler for amp
+    scaler = torch.cuda.amp.grad_scaler.GradScaler() if cfg.opt.amp else None
+
+    # Initialize LR Scheduler
+    if cfg.sch.lr_scheduler not in ['cosinedecay']:
+        raise ValueError('Yeah, there is no other option yet.')
+    
+    scheduler = CosineDecay(
+        optimizer, cfg.sch.lr_init, cfg.sch.lr_min, cfg.epochs, 
+        cfg.sch.lr_warmup_epochs / cfg.epochs, cfg.batch_size, len(traindata)
+    )
+
+    # Init model as DDP
+    model_without_ddp = model
+    if False: # Add flag for distributed
+        model = nn.parallel.DistributedDataParallel(model, device_ids=None) # Add device ids
+        model_without_ddp = model.module
+
+    # Init model EMA
+    model_ema = None
+    if cfg.opt.model_ema and False: # Add distributed params
+        adjust = world_size * cfg.batch_size * cfg.opt.model_ema_steps / args.epochs
+        alpha = 1.0 - cfg.opt.model_ema_decay
+        alpha = min(1.0, alpha*adjust)
+        model_ema = None # Add EMA class
+
+    # Resume run from checkpoint, if applicable
+    start_epoch = cfg.start_epoch
+    if cfg.mod.resume:
+        checkpoint = torch.load(cfg.mod.resume, map_location='cpu')
+        model_without_ddp.load_state_dict(checkpoint['model'])
+        if not cfg.test_only:
+            optimizer.load_state_dict(checkpoint['optimizer'])
+            scheduler.load_state_dict(checkpoint['scheduler'])
+        start_epoch = checkpoint['start_epoch']
+        if model_ema:
+            model_ema.load_state_dict(checkpoint['model_ema'])
+        if scaler:
+            scaler.load_state_dict(checkpoint['scaler'])
+
+    # Check for test only
+    if cfg.test_only:
+        torch.backends.cudnn.benchmark = False
+        torch.backends.cudnn.deterministic = True
+        if model_ema:
+            # TODO: Run evaluation with EMA
+            pass
+        else:
+            # TODO: Run evaluation without EMA
+            pass
+        return
+
+    start_time = time.time()
+
+    for epoch in range(start_epoch, cfg.epochs):
+        if False: # Add check for distributed
+            train_sampler.set_epoch(epoch)
+        # Train one epoch function
+        if model_ema:
+            # TODO: Run evaluation with EMA
+            pass
+        else:
+            # TODO: Run evaluation without EMA
+            pass
+
+        if cfg.log.savedir:
+            # Do log in checkpoint dictionary.
+            # Include EMA / scaler if applicable
+            pass
+        
+        # Save on master trick here
+    
+    total_time = time.time() - start_time
+    # Print total time
 
     return traindata, trainloader, valdata, valloader
 

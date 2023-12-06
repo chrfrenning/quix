@@ -78,7 +78,7 @@ Examples
 
 This module allows for extensive modularity in defining and customizing configurations 
 for different PyTorch models or training scenarios, without modifying the original base 
-configuration classes. It also supports nested structures in configuration files.
+configuration classes. 
 
 Author
 ------
@@ -235,17 +235,17 @@ class ModelConfig(_BaseConfig):
         Name of model to be parsed.
     use_torch_zoo : bool
         Flag to load model from torch models.
-    use_timm_zoo : bool
-        Flag to load model from timm (requires timm).
     pretrained_weights : Optional[str]
-        Path for pretrained model weights.
+        Pretrained model weights, passed to torchvision zoo.
+    resume : Optional[str]
+        Path of weights to resume training from.
     sync_bn : bool
         Sync Batch Norm for DDP.
     '''
     model: str
     use_torch_zoo: bool = True
-    use_timm_zoo: bool = add_argument(default=False, action='store_true') # TODO: Make example instead of default
     pretrained_weights: Optional[str] = None
+    resume: Optional[str] = None
     sync_bn: bool = False
 
 
@@ -289,12 +289,12 @@ class OptimizerConfig(_BaseConfig):
         Learning rate [base/peak].
     weight_decay : float
         Weight decay.
-    bias_decay : float
-        Weight decay for bias.
     norm_decay : float
         Weight decay for norm layers.
-    emb_decay : float
-        Weight decay for transformer embeddings.
+    custom_decay_keys : str
+        Keys for setting custom weight decay for certain parameters.
+    custom_decay_vals : float
+        Values for custom weight decay keys.
     opt_epsilon : float
         Epsilon for optimizer momentum.
     gradclip : float
@@ -313,13 +313,15 @@ class OptimizerConfig(_BaseConfig):
         Use Automatic Mixed Precision.
     consistent_batch_size : bool
         Use consistent batch size in train/val.
+    smoothing : float
+        Label smoothing, mainly for classification.
     '''
     optim:str = 'adamw'
     lr:float = 3e-3
     weight_decay:float = 2e-2
-    bias_decay:float = 0.0
     norm_decay:float = 0.0
-    emb_decay:float = 0.0
+    custom_decay_keys:List[str] = add_argument(default=[], nargs='+')
+    custom_decay_vals:List[float] = add_argument(default=[], nargs='+')
     opt_epsilon:float = 1e-7
     gradclip:float = 1.0
     accumulation_steps:int = 1
@@ -329,6 +331,7 @@ class OptimizerConfig(_BaseConfig):
     model_ema_decay:float = 0.9998
     amp:bool = add_argument(default=False, action='store_true')
     consistent_batch_size:bool = True
+    smoothing:float = 0.0
 
 
 class LogConfig(_BaseConfig):
@@ -344,14 +347,11 @@ class LogConfig(_BaseConfig):
         Flag to print logs to stdout.
     custom_runid : Optional[str]
         Custom run id for logging.
-    use_neptune : bool
-        Flag to use Neptune logging [requires defined API key].
     '''
-    savedir:str = './runlogs'
+    savedir:Optional[str] = None
     logfreq:int = 50
     stdout:bool = add_argument(default=False, action='store_true')
     custom_runid:Optional[str] = None
-    use_neptune:bool = add_argument(default=False, action='store_true')
 
 
 class AugmentationConfig(_BaseConfig):
@@ -426,13 +426,13 @@ class SchedulerConfig(_BaseConfig):
     lr_init:float = 1e-6
 
 
-
 TMod = TypeVar('TMod', bound=ModelConfig)
 TOpt = TypeVar('TOpt', bound=OptimizerConfig)
 TDat = TypeVar('TDat', bound=DataConfig)
 TLog = TypeVar('TLog', bound=LogConfig)
 TAug = TypeVar('TAug', bound=AugmentationConfig)
 TSch = TypeVar('TSch', bound=SchedulerConfig)
+
 
 @metadata_decorator
 @dataclass(repr=False)
@@ -459,6 +459,8 @@ class RunConfig(Generic[TMod,TDat,TOpt,TLog,TAug,TSch]):
         Batch size for training. 
     epochs : int
         Number of training epochs. 
+    start_epoch : int
+        Start training from given epoch
     test_only : bool
         Flag for only performing testing / validation.
     device : str
@@ -473,7 +475,6 @@ class RunConfig(Generic[TMod,TDat,TOpt,TLog,TAug,TSch]):
         IP address for MASTER_ADDR [DDP]. 
     ddp_master_port : str
         Port for MASTER_PORT [DDP]. 
-    
     '''
     mod:TMod = add_argument(no_parse=True)
     dat:TDat = add_argument(no_parse=True)
@@ -484,6 +485,7 @@ class RunConfig(Generic[TMod,TDat,TOpt,TLog,TAug,TSch]):
     cfg:str = add_argument(default=[], nargs='*')
     batch_size:int = 2048
     epochs:int = 300
+    start_epoch: int = 0
     test_only:bool = add_argument(default=False, action='store_true')
     device:str = add_argument(default='cuda', choices=['cuda', 'cpu'])
     use_devices:List[int] = add_argument(default=[0], nargs='*')
