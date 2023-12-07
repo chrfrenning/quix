@@ -17,7 +17,7 @@ from torch.optim.lr_scheduler import _LRScheduler as LRScheduler
 from torch.cuda.amp.grad_scaler import GradScaler
 from dataclasses import dataclass, field
 from typing import Tuple, Sequence, Optional, Dict, Any, ContextManager, Callable, Type
-from .cfg import RunConfig, _RunConfig, TMod,TOpt,TAug,TDat,TLog,TSch
+from .cfg import RunConfig
 from .proc import BatchProcessor
 from .log import BaseLogHandler
 from .data import QuixDataset, parse_train_augs, parse_val_augs
