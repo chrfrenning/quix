@@ -9,7 +9,7 @@ from dataclasses import is_dataclass, fields
 from typing import get_type_hints
 from quix.cfg import (
     RunConfig, ModelConfig, DataConfig, AugmentationConfig, OptimizerConfig,
-    SchedulerConfig, LogConfig, add_argument
+    LogConfig, add_argument
 )
 
 # class TestDocstrings(unittest.TestCase):

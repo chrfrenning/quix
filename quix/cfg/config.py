@@ -131,6 +131,14 @@ class OptimizerConfig(_BaseConfig):
         Use consistent batch size in train/val.
     smoothing : float
         Label smoothing, mainly for classification.
+    lr_scheduler : str
+        Learning rate scheduler type.
+    lr_warmup_epochs : int
+        Scheduler warmup epochs.
+    lr_min : float
+        Learning rate scheduler minimum value.
+    lr_init : float
+        Learning rate scheduler initial value.        
     '''
     optim:str = 'adamw'
     lr:float = 3e-3
@@ -148,7 +156,10 @@ class OptimizerConfig(_BaseConfig):
     amp:bool = add_argument(default=False, action='store_true')
     consistent_batch_size:bool = True
     smoothing:float = 0.0
-
+    lr_scheduler:str = 'cosinedecay'
+    lr_warmup_epochs:int = 5
+    lr_min:float = 1e-5
+    lr_init:float = 1e-6
 
 class LogConfig(_BaseConfig):
     '''Configuration settings for logging.
@@ -222,37 +233,16 @@ class AugmentationConfig(_BaseConfig):
     ra_reps:int = 2
 
 
-class SchedulerConfig(_BaseConfig):
-    '''Configuration settings for the learning rate scheduler.
-
-    Attributes
-    ----------
-    lr_scheduler : str
-        Learning rate scheduler type.
-    lr_warmup_epochs : int
-        Scheduler warmup epochs.
-    lr_min : float
-        Learning rate scheduler minimum value.
-    lr_init : float
-        Learning rate scheduler initial value.
-    '''
-    lr_scheduler:str = 'cosinedecay'
-    lr_warmup_epochs:int = 5
-    lr_min:float = 1e-5
-    lr_init:float = 1e-6
-
-
 TMod = TypeVar('TMod', bound=ModelConfig)
 TOpt = TypeVar('TOpt', bound=OptimizerConfig)
 TDat = TypeVar('TDat', bound=DataConfig)
 TLog = TypeVar('TLog', bound=LogConfig)
 TAug = TypeVar('TAug', bound=AugmentationConfig)
-TSch = TypeVar('TSch', bound=SchedulerConfig)
 
 
 @metadata_decorator
 @dataclass(repr=False)
-class RunConfig(Generic[TMod,TDat,TOpt,TLog,TAug,TSch]):
+class RunConfig(Generic[TMod,TDat,TOpt,TLog,TAug]):
     '''Quix RunConfig.
 
     Attributes
@@ -267,8 +257,6 @@ class RunConfig(Generic[TMod,TDat,TOpt,TLog,TAug,TSch]):
         Logging configuration parameters.
     aug : AugmentationConfig
         Augmentation configuration parameters.
-    sch : SchedulerConfig
-        Scheduler configuration parameters.
     cfg : str
         Path to config file in JSON/YAML format.
     batch_size : int
@@ -297,7 +285,6 @@ class RunConfig(Generic[TMod,TDat,TOpt,TLog,TAug,TSch]):
     opt:TOpt = add_argument(no_parse=True)
     log:TLog = add_argument(no_parse=True)
     aug:TAug = add_argument(no_parse=True)
-    sch:TSch = add_argument(no_parse=True)
     cfg:str = add_argument(default=[], nargs='*')
     batch_size:int = 2048
     epochs:int = 300
@@ -321,10 +308,9 @@ class RunConfig(Generic[TMod,TDat,TOpt,TLog,TAug,TSch]):
         optcfg:Type[TOpt]=OptimizerConfig,      #type:ignore
         logcfg:Type[TLog]=LogConfig,            #type:ignore
         augcfg:Type[TAug]=AugmentationConfig,   #type:ignore
-        schcfg:Type[TSch]=SchedulerConfig,      #type:ignore
     ) -> Sequence[str]:
         # Check if required arguments are provided
-        allcfgs = [modcfg, datcfg, optcfg, logcfg, augcfg, schcfg]
+        allcfgs = [modcfg, datcfg, optcfg, logcfg, augcfg]
         required = [
             f.name for cfg in [cls] + allcfgs
             for f in fields(cfg) # type: ignore
@@ -340,7 +326,6 @@ class RunConfig(Generic[TMod,TDat,TOpt,TLog,TAug,TSch]):
         optcfg:Type[TOpt]=OptimizerConfig,      # type: ignore
         logcfg:Type[TLog]=LogConfig,            # type: ignore
         augcfg:Type[TAug]=AugmentationConfig,   # type: ignore
-        schcfg:Type[TSch]=SchedulerConfig,      # type: ignore
         base_types:Sequence[Type]=[int, float, complex, str, bool]
     ) -> ArgumentParser:
         '''Constructs an ArgumentParser from provided configuration dataclasses.
@@ -377,13 +362,12 @@ class RunConfig(Generic[TMod,TDat,TOpt,TLog,TAug,TSch]):
         optgrp = parser.add_argument_group('opt')
         loggrp = parser.add_argument_group('log')
         auggrp = parser.add_argument_group('aug')
-        schgrp = parser.add_argument_group('sch')
             
         # --- Add Arguments from Config Classes ---
         grppairs = [
             (parser, RunConfig),
             (modgrp, modcfg), (datgrp, datcfg), (optgrp, optcfg), 
-            (loggrp, logcfg), (auggrp, augcfg), (schgrp, schcfg)
+            (loggrp, logcfg), (auggrp, augcfg)
         ]
         
         def _kwargs(name, type_hint, **metadata):
@@ -418,8 +402,7 @@ class RunConfig(Generic[TMod,TDat,TOpt,TLog,TAug,TSch]):
         optcfg:Type[TOpt]=OptimizerConfig,      #type:ignore
         logcfg:Type[TLog]=LogConfig,            #type:ignore
         augcfg:Type[TAug]=AugmentationConfig,   #type:ignore
-        schcfg:Type[TSch]=SchedulerConfig,      #type:ignore
-    ) -> RunConfig[TMod,TDat,TOpt,TLog,TAug,TSch]:
+    ) -> RunConfig[TMod,TDat,TOpt,TLog,TAug]:
         '''Factory method to create a RunConfig instance from an argument namespace.
 
         Parameters
@@ -458,14 +441,13 @@ class RunConfig(Generic[TMod,TDat,TOpt,TLog,TAug,TSch]):
             return dc(**dc_args, **kwargs)
 
         aug = extract_cfg(augcfg)
-        sch = extract_cfg(schcfg)
         mod = extract_cfg(modcfg)
         dat = extract_cfg(datcfg)
         opt = extract_cfg(optcfg)
         log = extract_cfg(logcfg)
 
         # Combine for RunConfig
-        run = extract_cfg(cls, mod=mod, dat=dat, opt=opt, log=log, aug=aug, sch=sch)
+        run = extract_cfg(cls, mod=mod, dat=dat, opt=opt, log=log, aug=aug)
 
         return run
     
@@ -509,9 +491,8 @@ class RunConfig(Generic[TMod,TDat,TOpt,TLog,TAug,TSch]):
         optcfg:Type[TOpt]=OptimizerConfig,      #type: ignore
         logcfg:Type[TLog]=LogConfig,            #type: ignore
         augcfg:Type[TAug]=AugmentationConfig,   #type: ignore
-        schcfg:Type[TSch]=SchedulerConfig,      #type: ignore
         **kwargs
-    ) -> RunConfig[TMod,TDat,TOpt,TLog,TAug,TSch]:
+    ) -> RunConfig[TMod,TDat,TOpt,TLog,TAug]:
         '''Parses a Quix RunConfig from command line arguments.
 
         Parameters
@@ -529,7 +510,7 @@ class RunConfig(Generic[TMod,TDat,TOpt,TLog,TAug,TSch]):
         schcfg : Type[SchedulerConfig]
             Dataclass for scheduler configuration.
         '''
-        allcfgs = [modcfg, datcfg, optcfg, logcfg, augcfg, schcfg]
+        allcfgs = [modcfg, datcfg, optcfg, logcfg, augcfg]
         parser = cls.get_arg_parser(*allcfgs)
         
         if '_testargs' in kwargs:
@@ -555,20 +536,3 @@ class RunConfig(Generic[TMod,TDat,TOpt,TLog,TAug,TSch]):
             parser.error(f"Missing required arguments: {', '.join(missing_args)}")
 
         return cls.from_namespace(args, *allcfgs)
-
-
-if __name__ == '__main__':
-    # TODO: Silly little test for debugging
-    class MyModelConfig(ModelConfig):
-        '''Testing model config.
-
-        Attributes
-        ----------
-        milkshake : str
-            Takes all the boys to the yard.
-        '''
-        milkshake:str = 'Better than yours'
-
-    runconfig = RunConfig.argparse(modcfg=MyModelConfig)
-    runconfig.mod.milkshake
-    print(runconfig)

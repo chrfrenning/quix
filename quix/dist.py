@@ -128,30 +128,30 @@ def _init_distributed_mode(args):
     setup_for_distributed(args.rank == 0)
 
 
-def init_distributed_mode(cfg:RunConfig[TMod,TDat,TOpt,TLog,TAug,TSch]) -> None:
-    '''Function to initialize distributed mode.
-    '''
-    if "RANK" in os.environ and "WORLD_SIZE" in os.environ:
-        rank = int(os.environ["RANK"])
-        world_size = int(os.environ["WORLD_SIZE"])
-        gpu = int(os.environ["LOCAL_RANK"])
-    elif "SLURM_PROCID" in os.environ:
-        rank = int(os.environ["SLURM_PROCID"])
-        gpu = rank % torch.cuda.device_count()
-    elif hasattr(args, "rank"):
-        pass
-    else:
-        print("Not using distributed mode")
-        distributed = False
-        return
+# def init_distributed_mode(cfg:RunConfig[TMod,TDat,TOpt,TLog,TAug,TSch]) -> None:
+#     '''Function to initialize distributed mode.
+#     '''
+#     if "RANK" in os.environ and "WORLD_SIZE" in os.environ:
+#         rank = int(os.environ["RANK"])
+#         world_size = int(os.environ["WORLD_SIZE"])
+#         gpu = int(os.environ["LOCAL_RANK"])
+#     elif "SLURM_PROCID" in os.environ:
+#         rank = int(os.environ["SLURM_PROCID"])
+#         gpu = rank % torch.cuda.device_count()
+#     elif hasattr(args, "rank"):
+#         pass
+#     else:
+#         print("Not using distributed mode")
+#         distributed = False
+#         return
 
-    distributed = True
+#     distributed = True
 
-    torch.cuda.set_device(gpu)
-    args.dist_backend = "nccl"
-    print(f"| distributed init (rank {rank}): {cfg.ddp_url}", flush=True)
-    torch.distributed.init_process_group(
-        backend=cfg.ddp_backend, init_method=cfg.ddp_url, world_size=world_size, rank=rank
-    )
-    torch.distributed.barrier()
-    setup_for_distributed(rank == 0)
+#     torch.cuda.set_device(gpu)
+#     args.dist_backend = "nccl"
+#     print(f"| distributed init (rank {rank}): {cfg.ddp_url}", flush=True)
+#     torch.distributed.init_process_group(
+#         backend=cfg.ddp_backend, init_method=cfg.ddp_url, world_size=world_size, rank=rank
+#     )
+#     torch.distributed.barrier()
+#     setup_for_distributed(rank == 0)

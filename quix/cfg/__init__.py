@@ -93,13 +93,12 @@ Contributors
 Please consider contributing to the project.
 '''
 from .config import (
-    ModelConfig, OptimizerConfig, DataConfig, LogConfig, 
-    SchedulerConfig, AugmentationConfig, add_argument
+    RunConfig, ModelConfig, OptimizerConfig, DataConfig, LogConfig, 
+    AugmentationConfig, add_argument
 )
-from .config import RunConfig as _RunConfig
 
 # Type alias for RunConfig without generics
-RunConfig = _RunConfig[
+StdRunConfig = RunConfig[
     ModelConfig,DataConfig,OptimizerConfig,LogConfig,
-    AugmentationConfig,SchedulerConfig
+    AugmentationConfig
 ]
