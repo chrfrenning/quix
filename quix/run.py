@@ -17,7 +17,7 @@ from torch.optim.lr_scheduler import _LRScheduler as LRScheduler
 from torch.cuda.amp.grad_scaler import GradScaler
 from dataclasses import dataclass, field
 from typing import Tuple, Sequence, Optional, Dict, Any, ContextManager, Callable, Type
-from .cfg import RunConfig, TMod, TDat, TOpt, TLog, TAug, TSch
+from .cfg import RunConfig, _RunConfig, TMod,TOpt,TAug,TDat,TLog,TSch
 from .proc import BatchProcessor
 from .log import BaseLogHandler
 from .data import QuixDataset, parse_train_augs, parse_val_augs
@@ -29,15 +29,17 @@ TODO:
 - Expand main script to DDP
 - Parts:
     Init distributed framework and initialize logging folder.
-    Init augmentations.
-    Init data.
-    Init model.
-    Init loss function.
-    Setup parameter groups
-    Init optimizer.
-    Init scaler
-    Init scheduler
-    Init EMA
+        - Main / Run init
+    Parse augmentations.
+    Parse data.
+    Parse model.
+    Parse optimizer
+        Init loss function.
+        Setup parameter groups
+        Init optimizer.
+        Init scaler
+        Init scheduler
+        Init EMA
     Setup DDP model
     Load checkpoints, if existing
 
@@ -49,7 +51,7 @@ Finally:
     Init TrainLoop / ValLoop
     Run train / eval using all components.
 '''
-def main(cfg:RunConfig[TMod,TDat,TOpt,TLog,TAug,TSch]):
+def main(cfg:RunConfig):
     # Create logging output if it doesn't exist
     if cfg.log.savedir is not None:
         os.makedirs(cfg.log.savedir, exist_ok=True)
@@ -71,7 +73,7 @@ def main(cfg:RunConfig[TMod,TDat,TOpt,TLog,TAug,TSch]):
     use_extensions = None
     if cfg.dat.input_ext is not None or cfg.dat.target_ext is not None:
         if cfg.dat.input_ext is not None and cfg.dat.target_ext is not None:
-            use_extensions = [*cfg.dat.input_ext, *cfg.dat.target_ext]
+            use_extensions = cfg.dat.input_ext + cfg.dat.target_ext
         else:
             raise ValueError('Both input_ext and target_ext must be set.')
 

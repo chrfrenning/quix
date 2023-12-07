@@ -1,106 +1,15 @@
-'''
-Quix Config
-===========
-
-This module, "Quix Config," provides an extendable framework for constructing
-configuration files for PyTorch model training. It uses custom dataclasses where
-each represents a group of related configuration parameters, and each field within 
-the dataclass corresponds to a specific run parameter.
-
-The module's design emphasizes flexibility and extendability for various training 
-configurations in PyTorch. This is achieved by subclassing one of the six config groups:
-`RunConfig`, `ModelConfig`, `DataConfig`, `OptimizerConfig`, `AugmentationConfig`,
-`SchedulerConfig`, and `LogConfig`. Each group can be extended with dataclass-style
-fields and passed to a `RunConfig` for easy construction and parsing of configurations.
-
-Classes
--------
-ModelConfig : Base dataclass for model configurations.
-DataConfig : Configuration settings for data handling.
-OptimizerConfig : Configuration settings for the optimizer.
-LogConfig : Configuration settings for logging.
-AugmentationConfig : Configuration settings for data augmentation.
-SchedulerConfig : Configuration settings for the learning rate scheduler.
-RunConfig : Aggregates different configuration aspects into a unified configuration object.
-
-Functions
----------
-add_argument : Adds custom arguments to configuration classes.
-_parse_docstring : Parses docstrings to extract descriptions.
-_extract_metadata : Extracts metadata from class docstrings.
-_repr_helper : Helper method for representing nested dataclasses.
-
-Examples
---------
-1. **Subclassing a Config Class**:
-   Extend `ModelConfig` to add custom arguments for a new model:
-
-   ```python
-   from quix.cfg import ModelConfig, add_argument
-
-   class MyModelConfig(ModelConfig):
-       """MyModelConfig.
-
-       Attributes
-       ----------
-       foo : str
-           The foo for the model.
-       bar : int
-           Number of bars for model.
-       flag : bool
-           Turning on the flag.
-       """
-
-       foo: str = "MyPrecious"
-       bar: int = 42
-       flag: bool = add_argument(default=False, action='store_true')
-   ```
-
-2. **Using the Custom Config**:
-   Apply your config in `RunConfig`:
-
-   ```python
-   runconfig = RunConfig.argparse(modcfg=MyModelConfig)
-   ```
-
-3. **Config File Usage**:
-   Use a YAML file for configurations:
-
-   ```bash
-   python train.py --cfg maincfg.yml
-   ```
-
-   For sub-experiments with different parameters:
-
-   ```bash
-   python train.py --cfg maincfg.yml exp1.yml
-   ```
-
-This module allows for extensive modularity in defining and customizing configurations 
-for different PyTorch models or training scenarios, without modifying the original base 
-configuration classes. 
-
-Author
-------
-Marius Aasan <mariuaas@ifi.uio.no>
-
-Contributors
-------------
-Please consider contributing to the project.
-'''
 from __future__ import annotations
-import inspect
-import warnings
 import os
 import json
 import yaml
-from argparse import ArgumentParser, Namespace, ArgumentError, ArgumentTypeError
-from numpydoc.docscrape import NumpyDocString
-from dataclasses import dataclass, field, fields, is_dataclass, _MISSING_TYPE
+from argparse import ArgumentParser, Namespace
+from dataclasses import dataclass, field, fields, _MISSING_TYPE
 from typing import (
     Type, TypeVar, Generic, Any, Dict, Optional, ClassVar, Union,
     Sequence, List, Tuple, get_type_hints, get_args, get_origin
 )
+from .cfgutils import metadata_decorator, _repr_helper, _get_parser
+
 
 def add_argument(**kwargs):
     '''Quix parsing method to add arguments.
@@ -117,100 +26,6 @@ def add_argument(**kwargs):
     return field(metadata=kwargs)
 
 
-def _unified_parser(value:str, types:Sequence[Type], base_types:Sequence[Type], descr:str):
-    '''Helper method to parse Union / Base types.
-    '''
-    for t in types:
-        if t in base_types:
-            try:
-                return t(value)
-            except ValueError:
-                continue
-        elif get_origin(t) is Union:
-            return _unified_parser(value, get_args(t), base_types, descr)
-    raise ArgumentTypeError(f"Value '{value}' is not valid for {descr}")
-
-
-def _get_parser(types:Sequence[Type], base_types:Sequence[Type], descr:str):
-    '''Factory method for constructing unified parsers.
-    '''
-    def _parser(x):
-        return _unified_parser(x, types, base_types, descr)
-    return _parser
-
-
-def _repr_helper(obj:Any, indent:int=0) -> str:
-    '''Helper method for __repr__ to handle nested dataclasses.
-    
-    Prints in a style similar to PyTorch module printing.
-    '''
-    pad = ' ' * indent
-    repr_str = obj.__class__.__name__ + '(\n'
-    
-    for fld in fields(obj):
-        value = getattr(obj, fld.name)
-        if is_dataclass(value):
-            value_str = _repr_helper(value, indent + 2)
-        else:
-            value_str = repr(value)
-        repr_str += f"{pad}  {fld.name}: {value_str}\n"
-
-    repr_str += pad + ')'
-    return repr_str
-
-
-def _parse_docstring(docstring:str) -> Dict[str, Any]:
-    '''Helper method to parse docstrings.
-    '''
-    doc = NumpyDocString(docstring)
-    return {item.name: {'help': '\n'.join(item.desc)} for item in doc['Attributes']}
-
-
-def _extract_metadata(cls) -> Dict[str, Any]:
-    '''Helper function to extract docstring metadata.
-    '''
-    metadata = {}
-    for c in reversed(cls.__mro__):
-        cls_docstring = inspect.getdoc(c)
-        if cls_docstring:
-            metadata.update(_parse_docstring(cls_docstring))
-    return metadata
-
-
-def metadata_decorator(cls):
-    '''Metadata decorator.
-
-    This function acts on dataclasses to embed docstring
-    descriptions into field metadata. This is later passed to the
-    arparser for parsing a config file.
-
-    Parameters
-    ----------
-    cls
-        A class instance for the metatype decorator
-    '''
-    metadata_dict = _extract_metadata(cls)
-    dataclass_fields = {f.name for f in fields(cls)}
-    docstring_attr = set(metadata_dict.keys())
-    missing_in_docstring = dataclass_fields - docstring_attr
-    missing_in_fields = docstring_attr - dataclass_fields
-
-    if missing_in_docstring:
-        warnings.warn(
-            f"Warning: Fields missing in docstring for {cls.__name__}: {missing_in_docstring}"
-        )
-    if missing_in_fields:
-        warnings.warn(
-            f"Warning: Docstring attributes not found as fields in {cls.__name__}: {missing_in_fields}"
-        )
-
-    for f in fields(cls):
-        if f.name in metadata_dict:
-            f.metadata = {'default': f.default, **metadata_dict[f.name], **f.metadata} # type: ignore
-
-    return cls
-
-
 class _MetaConfig(type):
 
     __dataclass_fields__: ClassVar[Dict] 
@@ -220,6 +35,7 @@ class _MetaConfig(type):
         metacls = metadata_decorator(datacls)
         return metacls
     
+
 class _BaseConfig(metaclass=_MetaConfig):
 
     def __repr__(self):
@@ -742,6 +558,7 @@ class RunConfig(Generic[TMod,TDat,TOpt,TLog,TAug,TSch]):
 
 
 if __name__ == '__main__':
+    # TODO: Silly little test for debugging
     class MyModelConfig(ModelConfig):
         '''Testing model config.
 
