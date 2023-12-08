@@ -1,13 +1,22 @@
 from __future__ import annotations
 import inspect
 import warnings
+import os
 from argparse import ArgumentTypeError
 from numpydoc.docscrape import NumpyDocString
 from dataclasses import fields, is_dataclass
 from typing import (
-    Type, Any, Dict, Union,
+    Type, Any, Dict, Union, Optional, Callable, TypeVar,
     Sequence, get_args, get_origin
 )
+
+T = TypeVar('T')
+
+def _fromenv(envkey:str, typecast:Callable[[str], T]) -> Optional[T]:
+    '''Helper method for setting defaults from environment variable.
+    '''
+    val = os.environ.get(envkey, None)
+    return typecast(val) if val else None
 
 
 def _unified_parser(value:str, types:Sequence[Type], base_types:Sequence[Type], descr:str):

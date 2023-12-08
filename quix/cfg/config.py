@@ -8,8 +8,9 @@ from typing import (
     Type, TypeVar, Generic, Any, Dict, Optional, ClassVar, Union,
     Sequence, List, Tuple, get_type_hints, get_args, get_origin
 )
-from .cfgutils import metadata_decorator, _repr_helper, _get_parser
-
+from .cfgutils import (
+    metadata_decorator, _repr_helper, _get_parser, _fromenv
+)
 
 def add_argument(**kwargs):
     '''Quix parsing method to add arguments.
@@ -84,6 +85,34 @@ class DataConfig(_BaseConfig):
         Extensions for targets in dataset.
     num_classes : int
         Number of classes.
+    img_size : int
+        Image size used for training.
+    val_size : Optional[int]
+        Set explicit image size for validation.
+    rrc_scale : tuple[float, float] 
+        RandomResizeCrop scale.
+    rrc_ratio : tuple[float, float] 
+        RandomResizeCrop ratio.
+    intp_modes : List[str]
+        Interpolation modes for augmentations.
+    hflip : bool
+        Use horizontal flip augmentation.
+    vflip : bool
+        Use vertical flip augmentation.
+    jitter : bool
+        Use color jitter.
+    aug3 : bool
+        Use 3Augment.
+    randaug : str
+        RandAug level.
+    cutmix_alpha : float
+        CutMix alpha.
+    mixup_alpha : float
+        MixUp alpha.
+    ra_sampler : bool
+        Use repeated augmentation sampler.
+    ra_reps : int
+        Number of repeated augmentations for RASampler.        
     '''
     data_path:str
     dataset:str = 'IN1k'
@@ -92,6 +121,22 @@ class DataConfig(_BaseConfig):
     input_ext:List[str] = add_argument(default=None, nargs='+')
     target_ext:List[str] = add_argument(default=None, nargs='+')
     num_classes:Optional[int] = None
+    img_size:int = 224
+    val_size:Optional[int] = None
+    rrc_scale:Tuple[float,float] = add_argument(default=(.08, 1.0), nargs=2)
+    rrc_ratio:Tuple[float,float] = add_argument(default=(.75, 4/3), nargs=2)
+    intp_modes:str = add_argument(
+        default=['nearest', 'bilinear', 'bicubic'], nargs='*', choices=['nearest', 'bilinear', 'bicubic']
+    )
+    hflip:bool = True
+    vflip:bool = add_argument(default=False, action='store_true')
+    jitter:bool = True
+    aug3:bool = add_argument(default=False, action='store_true')
+    randaug:str = add_argument(default='medium', choices=['none', 'light', 'medium', 'strong'])
+    cutmix_alpha:float = 0.0
+    mixup_alpha:float = 0.0
+    ra_sampler:bool = add_argument(default=False, action='store_true')
+    ra_reps:int = 2
 
 
 class OptimizerConfig(_BaseConfig):
@@ -161,6 +206,7 @@ class OptimizerConfig(_BaseConfig):
     lr_min:float = 1e-5
     lr_init:float = 1e-6
 
+
 class LogConfig(_BaseConfig):
     '''Configuration settings for logging.
 
@@ -178,71 +224,18 @@ class LogConfig(_BaseConfig):
     savedir:Optional[str] = None
     logfreq:int = 50
     stdout:bool = add_argument(default=False, action='store_true')
-    custom_runid:Optional[str] = None
-
-
-class AugmentationConfig(_BaseConfig):
-    '''Configuration settings for data augmentation.
-
-    Attributes
-    ----------
-    img_size : int
-        Image size used for training.
-    val_size : Optional[int]
-        Set explicit image size for validation.
-    rrc_scale : tuple[float, float] 
-        RandomResizeCrop scale.
-    rrc_ratio : tuple[float, float] 
-        RandomResizeCrop ratio.
-    intp_modes : List[str]
-        Interpolation modes for augmentations.
-    hflip : bool
-        Use horizontal flip augmentation.
-    vflip : bool
-        Use vertical flip augmentation.
-    jitter : bool
-        Use color jitter.
-    aug3 : bool
-        Use 3Augment.
-    randaug : str
-        RandAug level.
-    cutmix_alpha : float
-        CutMix alpha.
-    mixup_alpha : float
-        MixUp alpha.
-    ra_sampler : bool
-        Use repeated augmentation sampler.
-    ra_reps : int
-        Number of repeated augmentations for RASampler.
-    '''
-    img_size:int = 224
-    val_size:Optional[int] = None
-    rrc_scale:Tuple[float,float] = add_argument(default=(.08, 1.0), nargs=2)
-    rrc_ratio:Tuple[float,float] = add_argument(default=(.75, 4/3), nargs=2)
-    intp_modes:str = add_argument(
-        default=['nearest', 'bilinear', 'bicubic'], nargs='*', choices=['nearest', 'bilinear', 'bicubic']
-    )
-    hflip:bool = True
-    vflip:bool = add_argument(default=False, action='store_true')
-    jitter:bool = True
-    aug3:bool = add_argument(default=False, action='store_true')
-    randaug:str = add_argument(default='medium', choices=['none', 'light', 'medium', 'strong'])
-    cutmix_alpha:float = 0.0
-    mixup_alpha:float = 0.0
-    ra_sampler:bool = add_argument(default=False, action='store_true')
-    ra_reps:int = 2
+    custom_runid:Optional[str] = _fromenv('RUNID', str)
 
 
 TMod = TypeVar('TMod', bound=ModelConfig)
 TOpt = TypeVar('TOpt', bound=OptimizerConfig)
 TDat = TypeVar('TDat', bound=DataConfig)
 TLog = TypeVar('TLog', bound=LogConfig)
-TAug = TypeVar('TAug', bound=AugmentationConfig)
 
 
 @metadata_decorator
 @dataclass(repr=False)
-class RunConfig(Generic[TMod,TDat,TOpt,TLog,TAug]):
+class RunConfig(Generic[TMod,TDat,TOpt,TLog]):
     '''Quix RunConfig.
 
     Attributes
@@ -255,8 +248,6 @@ class RunConfig(Generic[TMod,TDat,TOpt,TLog,TAug]):
         Optimization configuration parameters.
     log : LogConfig
         Logging configuration parameters.
-    aug : AugmentationConfig
-        Augmentation configuration parameters.
     cfg : str
         Path to config file in JSON/YAML format.
     batch_size : int
@@ -269,8 +260,6 @@ class RunConfig(Generic[TMod,TDat,TOpt,TLog,TAug]):
         Flag for only performing testing / validation.
     device : str
         Device type for training ['cuda' or 'cpu']. 
-    use_devices : List[int]
-        List of device IDs to use for training.
     ddp_backend : str
         Distributed Data Parallel [DDP] backend. 
     ddp_url : str
@@ -279,23 +268,30 @@ class RunConfig(Generic[TMod,TDat,TOpt,TLog,TAug]):
         IP address for MASTER_ADDR [DDP]. 
     ddp_master_port : str
         Port for MASTER_PORT [DDP]. 
+    world_size : int
+        World size for DDP. If None, this is inferred from environment variables.
+    rank : int
+        Rank for DDP. If None, this is inferred from environment variables.
+    local_rank : int
+        Local device rank for DDP. If None, this is inferred from environment variables.
     '''
     mod:TMod = add_argument(no_parse=True)
     dat:TDat = add_argument(no_parse=True)
     opt:TOpt = add_argument(no_parse=True)
     log:TLog = add_argument(no_parse=True)
-    aug:TAug = add_argument(no_parse=True)
     cfg:str = add_argument(default=[], nargs='*')
-    batch_size:int = 2048
+    batch_size:int = 256
     epochs:int = 300
     start_epoch: int = 0
     test_only:bool = add_argument(default=False, action='store_true')
-    device:str = add_argument(default='cuda', choices=['cuda', 'cpu'])
-    use_devices:List[int] = add_argument(default=[0], nargs='*')
     ddp_backend:str = 'nccl'
     ddp_url:str = 'env://'
     ddp_master_address:str = 'localhost'
     ddp_master_port:str = '29500'
+    device:str = add_argument(default='cuda', choices=['cuda', 'cpu'])
+    world_size:Optional[int] = _fromenv('WORLD_SIZE', int)
+    rank:Optional[int] = _fromenv('RANK', int)
+    local_rank:Optional[int] = _fromenv('LOCAL_RANK', int)
 
     def __repr__(self):
         return _repr_helper(self)
@@ -307,10 +303,9 @@ class RunConfig(Generic[TMod,TDat,TOpt,TLog,TAug]):
         datcfg:Type[TDat]=DataConfig,           #type:ignore
         optcfg:Type[TOpt]=OptimizerConfig,      #type:ignore
         logcfg:Type[TLog]=LogConfig,            #type:ignore
-        augcfg:Type[TAug]=AugmentationConfig,   #type:ignore
     ) -> Sequence[str]:
         # Check if required arguments are provided
-        allcfgs = [modcfg, datcfg, optcfg, logcfg, augcfg]
+        allcfgs = [modcfg, datcfg, optcfg, logcfg]
         required = [
             f.name for cfg in [cls] + allcfgs
             for f in fields(cfg) # type: ignore
@@ -325,7 +320,6 @@ class RunConfig(Generic[TMod,TDat,TOpt,TLog,TAug]):
         datcfg:Type[TDat]=DataConfig,           # type: ignore
         optcfg:Type[TOpt]=OptimizerConfig,      # type: ignore
         logcfg:Type[TLog]=LogConfig,            # type: ignore
-        augcfg:Type[TAug]=AugmentationConfig,   # type: ignore
         base_types:Sequence[Type]=[int, float, complex, str, bool]
     ) -> ArgumentParser:
         '''Constructs an ArgumentParser from provided configuration dataclasses.
@@ -344,10 +338,6 @@ class RunConfig(Generic[TMod,TDat,TOpt,TLog,TAug]):
             Dataclass for optimizer configuration.
         logcfg : Type[LogConfig]
             Dataclass for logging configuration.
-        augcfg : Type[AugmentationConfig]
-            Dataclass for augmentation configuration.
-        schcfg : Type[SchedulerConfig]
-            Dataclass for scheduler configuration.
 
         Returns
         -------
@@ -361,13 +351,11 @@ class RunConfig(Generic[TMod,TDat,TOpt,TLog,TAug]):
         datgrp = parser.add_argument_group('dat')
         optgrp = parser.add_argument_group('opt')
         loggrp = parser.add_argument_group('log')
-        auggrp = parser.add_argument_group('aug')
             
         # --- Add Arguments from Config Classes ---
         grppairs = [
             (parser, RunConfig),
-            (modgrp, modcfg), (datgrp, datcfg), (optgrp, optcfg), 
-            (loggrp, logcfg), (auggrp, augcfg)
+            (modgrp, modcfg), (datgrp, datcfg), (optgrp, optcfg), (loggrp, logcfg)
         ]
         
         def _kwargs(name, type_hint, **metadata):
@@ -401,8 +389,7 @@ class RunConfig(Generic[TMod,TDat,TOpt,TLog,TAug]):
         datcfg:Type[TDat]=DataConfig,           #type:ignore
         optcfg:Type[TOpt]=OptimizerConfig,      #type:ignore
         logcfg:Type[TLog]=LogConfig,            #type:ignore
-        augcfg:Type[TAug]=AugmentationConfig,   #type:ignore
-    ) -> RunConfig[TMod,TDat,TOpt,TLog,TAug]:
+    ) -> RunConfig[TMod,TDat,TOpt,TLog]:
         '''Factory method to create a RunConfig instance from an argument namespace.
 
         Parameters
@@ -417,10 +404,6 @@ class RunConfig(Generic[TMod,TDat,TOpt,TLog,TAug]):
             Dataclass for optimizer configuration.
         logcfg : Type[LogConfig]
             Dataclass for logging configuration.
-        augcfg : Type[AugmentationConfig]
-            Dataclass for augmentation configuration.
-        schcfg : Type[SchedulerConfig]
-            Dataclass for scheduler configuration.
 
         Returns
         -------
@@ -440,14 +423,13 @@ class RunConfig(Generic[TMod,TDat,TOpt,TLog,TAug]):
                     dc_args[field_name] = getattr(args, alt_field_name)
             return dc(**dc_args, **kwargs)
 
-        aug = extract_cfg(augcfg)
         mod = extract_cfg(modcfg)
         dat = extract_cfg(datcfg)
         opt = extract_cfg(optcfg)
         log = extract_cfg(logcfg)
 
         # Combine for RunConfig
-        run = extract_cfg(cls, mod=mod, dat=dat, opt=opt, log=log, aug=aug)
+        run = extract_cfg(cls, mod=mod, dat=dat, opt=opt, log=log)
 
         return run
     
@@ -490,9 +472,8 @@ class RunConfig(Generic[TMod,TDat,TOpt,TLog,TAug]):
         datcfg:Type[TDat]=DataConfig,           #type: ignore
         optcfg:Type[TOpt]=OptimizerConfig,      #type: ignore
         logcfg:Type[TLog]=LogConfig,            #type: ignore
-        augcfg:Type[TAug]=AugmentationConfig,   #type: ignore
         **kwargs
-    ) -> RunConfig[TMod,TDat,TOpt,TLog,TAug]:
+    ) -> RunConfig[TMod,TDat,TOpt,TLog]:
         '''Parses a Quix RunConfig from command line arguments.
 
         Parameters
@@ -505,12 +486,8 @@ class RunConfig(Generic[TMod,TDat,TOpt,TLog,TAug]):
             Dataclass for optimizer configuration.
         logcfg : Type[LogConfig]
             Dataclass for logging configuration.
-        augcfg : Type[AugmentationConfig]
-            Dataclass for augmentation configuration.
-        schcfg : Type[SchedulerConfig]
-            Dataclass for scheduler configuration.
         '''
-        allcfgs = [modcfg, datcfg, optcfg, logcfg, augcfg]
+        allcfgs = [modcfg, datcfg, optcfg, logcfg]
         parser = cls.get_arg_parser(*allcfgs)
         
         if '_testargs' in kwargs:

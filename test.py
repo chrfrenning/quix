@@ -8,7 +8,7 @@ from unittest.mock import patch
 from dataclasses import is_dataclass, fields
 from typing import get_type_hints
 from quix.cfg import (
-    RunConfig, ModelConfig, DataConfig, AugmentationConfig, OptimizerConfig,
+    RunConfig, ModelConfig, DataConfig, OptimizerConfig,
     LogConfig, add_argument
 )
 

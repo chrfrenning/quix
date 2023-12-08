@@ -94,11 +94,10 @@ Please consider contributing to the project.
 '''
 from .config import (
     RunConfig, ModelConfig, OptimizerConfig, DataConfig, LogConfig, 
-    AugmentationConfig, add_argument
+    add_argument, TDat, TLog, TMod, TOpt
 )
 
 # Type alias for RunConfig without generics
 StdRunConfig = RunConfig[
-    ModelConfig,DataConfig,OptimizerConfig,LogConfig,
-    AugmentationConfig
+    ModelConfig,DataConfig,OptimizerConfig,LogConfig
 ]

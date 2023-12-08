@@ -9,7 +9,7 @@ from typing import List, Optional, Tuple
 
 import torch
 import torch.distributed as dist
-from .cfg import RunConfig, TMod, TDat, TOpt, TLog, TAug, TSch
+from .cfg import StdRunConfig
 
 
 def setup_for_distributed(is_master:bool) -> None:
@@ -97,35 +97,35 @@ def save_on_master(*args, **kwargs) -> None:
     if is_main_process():
         torch.save(*args, **kwargs)
 
-def _init_distributed_mode(args):
-    '''Function to initialize distributed mode.
+# def _init_distributed_mode(args):
+#     '''Function to initialize distributed mode.
 
-    Adapted from https://github.com/pytorch/vision/blob/main/references/classification/utils.py
-    '''
-    if "RANK" in os.environ and "WORLD_SIZE" in os.environ:
-        args.rank = int(os.environ["RANK"])
-        args.world_size = int(os.environ["WORLD_SIZE"])
-        args.gpu = int(os.environ["LOCAL_RANK"])
-    elif "SLURM_PROCID" in os.environ:
-        args.rank = int(os.environ["SLURM_PROCID"])
-        args.gpu = args.rank % torch.cuda.device_count()
-    elif hasattr(args, "rank"):
-        pass
-    else:
-        print("Not using distributed mode")
-        args.distributed = False
-        return
+#     Adapted from https://github.com/pytorch/vision/blob/main/references/classification/utils.py
+#     '''
+#     if "RANK" in os.environ and "WORLD_SIZE" in os.environ:
+#         args.rank = int(os.environ["RANK"])
+#         args.world_size = int(os.environ["WORLD_SIZE"])
+#         args.gpu = int(os.environ["LOCAL_RANK"])
+#     elif "SLURM_PROCID" in os.environ:
+#         args.rank = int(os.environ["SLURM_PROCID"])
+#         args.gpu = args.rank % torch.cuda.device_count()
+#     elif hasattr(args, "rank"):
+#         pass
+#     else:
+#         print("Not using distributed mode")
+#         args.distributed = False
+#         return
 
-    args.distributed = True
+#     args.distributed = True
 
-    torch.cuda.set_device(args.gpu)
-    args.dist_backend = "nccl"
-    print(f"| distributed init (rank {args.rank}): {args.dist_url}", flush=True)
-    torch.distributed.init_process_group(
-        backend=args.dist_backend, init_method=args.dist_url, world_size=args.world_size, rank=args.rank
-    )
-    torch.distributed.barrier()
-    setup_for_distributed(args.rank == 0)
+#     torch.cuda.set_device(args.gpu)
+#     args.dist_backend = "nccl"
+#     print(f"| distributed init (rank {args.rank}): {args.dist_url}", flush=True)
+#     torch.distributed.init_process_group(
+#         backend=args.dist_backend, init_method=args.dist_url, world_size=args.world_size, rank=args.rank
+#     )
+#     torch.distributed.barrier()
+#     setup_for_distributed(args.rank == 0)
 
 
 # def init_distributed_mode(cfg:RunConfig[TMod,TDat,TOpt,TLog,TAug,TSch]) -> None:

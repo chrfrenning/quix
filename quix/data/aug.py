@@ -12,7 +12,7 @@ from typing import (
     Optional, Tuple, Callable, Dict, Any, List,
     Generic
 )
-from ..cfg import TAug, AugmentationConfig
+from ..cfg import TDat, DataConfig
 
 class GaussianBlurPIL:
 
@@ -131,7 +131,7 @@ RANDAUG_DICT = {
     'strong': (2, 20),
 }
 
-def parse_train_augs(cfg:AugmentationConfig, num_classes:Optional[int]=None) -> Tuple[Callable,Callable]:
+def parse_train_augs(cfg:DataConfig, num_classes:Optional[int]=None) -> Tuple[Callable,Callable]:
     # Although some of the parameters are guaranteed to be in correct 
     # form in config, we use fallbacks in interest of good practice.
     intp_modes = INTERPOLATION_MODES.get(cfg.intp_modes, 'all')
@@ -195,7 +195,7 @@ def parse_train_augs(cfg:AugmentationConfig, num_classes:Optional[int]=None) -> 
     return sample_augs, batch_augs
     
 
-def parse_val_augs(cfg:AugmentationConfig, num_classes:Optional[int]=None) -> Callable:
+def parse_val_augs(cfg:DataConfig, num_classes:Optional[int]=None) -> Callable:
     val_img_size = cfg.val_size if cfg.val_size is not None else cfg.img_size
     sample_augs = v2.RandomResizedCrop(val_img_size, (1.0,1.0), antialias=True)
     return sample_augs

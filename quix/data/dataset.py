@@ -1,6 +1,6 @@
 '''
-Quix Data
-=========
+Quix Dataset
+============
 
 This module contains the QuixDataset and QuixUnionDataset classes, which are 
 designed for efficient handling of locally stored datasets using .tar shards, 
