@@ -33,6 +33,7 @@ class Runner:
 
     optimizer_dict = { # Fix later
         'adamw': torch.optim.AdamW,
+        'adam': torch.optim.Adam
     }
 
     scheduler_dict = {
@@ -257,7 +258,7 @@ class Runner:
         # Init model as DDP
         model_without_ddp = model
         if self.distributed: # Add flag for distributed
-            model = nn.parallel.DistributedDataParallel(model, device_ids=None) # Add device ids
+            model = DDP(model, device_ids=None) # Add device ids
             model_without_ddp = model.module
 
         # Init model EMA

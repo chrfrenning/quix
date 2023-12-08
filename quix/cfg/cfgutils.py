@@ -41,6 +41,9 @@ def _get_parser(types:Sequence[Type], base_types:Sequence[Type], descr:str):
     return _parser
 
 
+def _deffac(val:Any) -> Any:
+    return val
+
 def _repr_helper(obj:Any, indent:int=0) -> str:
     '''Helper method for __repr__ to handle nested dataclasses.
     

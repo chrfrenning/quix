@@ -2,6 +2,7 @@ from __future__ import annotations
 import os
 import json
 import yaml
+from functools import partial
 from argparse import ArgumentParser, Namespace
 from dataclasses import dataclass, field, fields, _MISSING_TYPE
 from typing import (
@@ -9,7 +10,7 @@ from typing import (
     Sequence, List, Tuple, get_type_hints, get_args, get_origin
 )
 from .cfgutils import (
-    metadata_decorator, _repr_helper, _get_parser, _fromenv
+    metadata_decorator, _repr_helper, _get_parser, _fromenv, _deffac
 )
 
 def add_argument(**kwargs):
@@ -18,12 +19,14 @@ def add_argument(**kwargs):
     Provides an API similar to argparse.ArgumentParser's add_argument.
     NOTE: `dest` arguments are currently incompatible with Quix parser.
     '''
+    # Previous implementation. Check if new solution is better
+        # if type(default_value) in [list, dict, set]:
+        #     return field(default_factory=default_type, metadata=kwargs)
+        # return field(default=default_value, metadata=kwargs)
     if 'default' in kwargs:
         default_value = kwargs['default']
         default_type = type(default_value)
-        if type(default_value) in [list, dict, set]:
-            return field(default_factory=default_type, metadata=kwargs)
-        return field(default=default_value, metadata=kwargs)
+        return field(default_factory=partial(_deffac, default_value), metadata=kwargs)
     return field(metadata=kwargs)
 
 
@@ -510,6 +513,6 @@ class RunConfig(Generic[TMod,TDat,TOpt,TLog]):
 
         missing_args = [arg for arg in cls._get_required(*allcfgs) if missing(arg)]
         if missing_args:
-            parser.error(f"Missing required arguments: {', '.join(missing_args)}")
+            parser.error(f"Parser missing required arguments: {', '.join(missing_args)}")
 
         return cls.from_namespace(args, *allcfgs)
