@@ -40,7 +40,6 @@ def _get_parser(types:Sequence[Type], base_types:Sequence[Type], descr:str):
         return _unified_parser(x, types, base_types, descr)
     return _parser
 
-
 def _deffac(val:Any) -> Any:
     return val
 

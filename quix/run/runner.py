@@ -49,6 +49,8 @@ class AbstractRunner:
 
         self.cfg = cfg
         self.distributed = False
+        self.input_ext = self.dat.input_ext
+        self.target_ext = self.dat.target_ext
         self.world_size = self.rank = self.local_rank = None
         distparams = ['world_size', 'rank', 'local_rank']
         missing = [k for k in distparams if not getattr(cfg, k)]
@@ -186,7 +188,6 @@ class AbstractRunner:
             'fwd_context': autocast if self.cfg.opt.amp else nullcontext,
         }
 
-
     def process_epoch(
         self, 
         epoch:int,
@@ -216,7 +217,7 @@ class AbstractRunner:
                 final_batch = False
                 if hasattr(loader, '__len__'):
                     final_batch = ((len(loader) - 1) == iteration)
-                n_inputs = len(self.cfg.dat.input_ext)
+                n_inputs = len(self.input_ext) #TODO: fix
                 inputs, targets = data[:n_inputs], data[n_inputs:]
                 kwargs = {
                     'iteration': iteration, 'inputs': inputs, 
@@ -306,8 +307,13 @@ class Runner(AbstractRunner):
     def __init__(self, cfg:RunConfig[TMod,TDat,TOpt,TLog]):
         super().__init__(cfg)
         self.num_classes = self.cfg.dat.num_classes
+        self.input_ext = self.dat.input_ext
+        self.target_ext = self.dat.target_ext
         if self.dat.dataset == 'IN1k':
             self.num_classes = 1000
+            self.input_ext = ['jpg']
+            self.target_ext = ['cls']
+
 
     @staticmethod
     def forward_fn(inputs, targets, model, loss_fn):
@@ -326,9 +332,9 @@ class Runner(AbstractRunner):
 
         # Load Data
         use_extensions = None
-        if self.dat.input_ext is not None or self.dat.target_ext is not None:
-            if self.dat.input_ext is not None and self.dat.target_ext is not None:
-                use_extensions = self.dat.input_ext + self.dat.target_ext
+        if self.input_ext is not None or self.target_ext is not None:
+            if self.input_ext is not None and self.target_ext is not None:
+                use_extensions = self.input_ext + self.target_ext
             else:
                 raise ValueError('Both input_ext and target_ext must be set.')
 
@@ -500,7 +506,10 @@ class Runner(AbstractRunner):
                 model_ema.load_state_dict(checkpoint['model_ema'])
             if scaler:
                 scaler.load_state_dict(checkpoint['scaler'])
-        return start_epoch    
+        return start_epoch
+    
+    def parse_logger(self, start_epoch:int):
+        return None # TODO: Add logger.
 
 
 

@@ -19,13 +19,8 @@ def add_argument(**kwargs):
     Provides an API similar to argparse.ArgumentParser's add_argument.
     NOTE: `dest` arguments are currently incompatible with Quix parser.
     '''
-    # Previous implementation. Check if new solution is better
-        # if type(default_value) in [list, dict, set]:
-        #     return field(default_factory=default_type, metadata=kwargs)
-        # return field(default=default_value, metadata=kwargs)
     if 'default' in kwargs:
         default_value = kwargs['default']
-        default_type = type(default_value)
         return field(default_factory=partial(_deffac, default_value), metadata=kwargs)
     return field(metadata=kwargs)
 
