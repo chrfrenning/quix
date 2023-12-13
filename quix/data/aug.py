@@ -117,11 +117,6 @@ INTERPOLATION_MODES = {
     'nearest':v2.InterpolationMode.NEAREST,
     'bilinear':v2.InterpolationMode.BILINEAR,
     'bicubic':v2.InterpolationMode.BICUBIC,
-    'all':[
-        v2.InterpolationMode.NEAREST,
-        v2.InterpolationMode.BILINEAR,
-        v2.InterpolationMode.BICUBIC
-    ]
 }
 
 RANDAUG_DICT = {
@@ -132,9 +127,11 @@ RANDAUG_DICT = {
 }
 
 def parse_train_augs(cfg:DataConfig, num_classes:Optional[int]=None) -> Tuple[Callable,Callable]:
-    # Although some of the parameters are guaranteed to be in correct 
-    # form in config, we use fallbacks in interest of good practice.
-    intp_modes = INTERPOLATION_MODES.get(cfg.intp_modes, 'all')
+    # Get interpolation modes
+    intp_modes = [
+        INTERPOLATION_MODES[m] for m in cfg.intp_modes 
+        if m in INTERPOLATION_MODES
+    ]
     identity = Identity()
 
     # RandAug
@@ -184,10 +181,17 @@ def parse_train_augs(cfg:DataConfig, num_classes:Optional[int]=None) -> Tuple[Ca
     ]
 
     # Mixup / Cutmix (50 - 50 chance)
-    batch_augs = v2.RandomChoice([
-        v2.MixUp(num_classes=num_classes, alpha=cfg.mixup_alpha) if use_mixup else identity,
-        v2.CutMix(num_classes=num_classes, alpha=cfg.cutmix_alpha) if use_cutmix else identity,
-    ])
+    if use_cutmix and use_mixup:
+        batch_augs = v2.RandomChoice([
+            v2.MixUp(num_classes=num_classes, alpha=cfg.mixup_alpha),
+            v2.CutMix(num_classes=num_classes, alpha=cfg.cutmix_alpha)
+        ])
+    elif use_mixup:
+        batch_augs = v2.MixUp(num_classes=num_classes, alpha=cfg.mixup_alpha) if use_mixup else identity
+    elif use_cutmix:
+        batch_augs = v2.CutMix(num_classes=num_classes, alpha=cfg.cutmix_alpha)
+    else:
+        batch_augs = identity
 
     # Compose Augmentations
     sample_augs = v2.Compose([resizecrop, mainaug, *addaug])

@@ -61,12 +61,24 @@ class ModelConfig(_BaseConfig):
         Path of weights to resume training from.
     sync_bn : bool
         Sync Batch Norm for DDP.
+    model_ema : bool 
+        Use model exponential moving average [EMA]
+    model_ema_steps : int
+        Number of steps for model EMA
+    model_ema_decay : float
+        Decay for model EMA
+    model_ema_warmup_epochs : int
+        Number of warmup steps before applying EMA.
     '''
     model: str
     use_torch_zoo: bool = True
     pretrained_weights: Optional[str] = None
     resume: Optional[str] = None
     sync_bn: bool = False
+    model_ema:bool = add_argument(default=False, action='store_true')
+    model_ema_steps:int = 32
+    model_ema_decay:float = 0.9998
+    model_ema_warmup_epochs:int = 5
 
 
 class DataConfig(_BaseConfig):
@@ -167,12 +179,6 @@ class OptimizerConfig(_BaseConfig):
         Gradient accumulation steps.
     amsgrad : bool
         Flag for the use of AMSGrad.
-    model_ema : bool 
-        Use model exponential moving average [EMA]
-    model_ema_steps : int
-        Number of steps for model EMA
-    model_ema_decay : float
-        Decay for model EMA
     amp : bool
         Use Automatic Mixed Precision.
     consistent_batch_size : bool
@@ -198,9 +204,6 @@ class OptimizerConfig(_BaseConfig):
     gradclip:float = 1.0
     accumulation_steps:int = 1
     amsgrad:bool = add_argument(default=False, action='store_true')
-    model_ema:bool = add_argument(default=False, action='store_true')
-    model_ema_steps:int = 32
-    model_ema_decay:float = 0.9998
     amp:bool = add_argument(default=False, action='store_true')
     consistent_batch_size:bool = True
     smoothing:float = 0.0

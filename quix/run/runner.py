@@ -12,13 +12,15 @@ import errno
 
 from torch import Tensor
 from contextlib import nullcontext
-from torch.utils.data import DataLoader, default_collate
+from torch.utils.data import DataLoader, default_collate, SequentialSampler
 from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.utils.data.distributed import DistributedSampler
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import _LRScheduler as LRScheduler
 from torch.cuda.amp.grad_scaler import GradScaler
 from torch.cuda.amp.autocast_mode import autocast
-from typing import Tuple, Sequence, Optional, Dict, Any, ContextManager, Callable, Type
+from torch.optim.swa_utils import AveragedModel
+from typing import Tuple, Sequence, Optional, Dict, Any, ContextManager, Callable, Type, Union
 from ..cfg import (
     RunConfig, TMod, TDat, TOpt, TLog,
     ModelConfig, DataConfig, OptimizerConfig, LogConfig
@@ -27,57 +29,70 @@ from ..proc import BatchProcessor
 from ..log import BaseLogHandler
 from ..data import QuixDataset, parse_train_augs, parse_val_augs
 from ..sched import CosineDecay
+from ..ema import ExponentialMovingAverage
 
+TensorSequence = Union[Tensor, Sequence[Tensor]]
+CallableContext = Callable[[], ContextManager]
 
-class Runner:
+class AbstractRunner:
 
-    optimizer_dict = { # Fix later
-        'adamw': torch.optim.AdamW,
-        'adam': torch.optim.Adam
-    }
-
-    scheduler_dict = {
-        'cosinedecay': CosineDecay
-    }
+    _nimplmsg = '{} misses implementation for {}.'
 
     def __init__(self, cfg:RunConfig[TMod,TDat,TOpt,TLog]):
-        '''Run class.
+        '''Initializes a runner instance.
 
         Parameters
         ----------
         cfg :RunConfig 
             Parsed RunConfig instance.
         '''
+
         self.cfg = cfg
         self.distributed = False
         self.world_size = self.rank = self.local_rank = None
-
         distparams = ['world_size', 'rank', 'local_rank']
         missing = [k for k in distparams if not getattr(cfg, k)]
+
         if missing:
             msg = f'Missing args: {",".join(missing)} for distributed training.\n'
             msg += f'Running with distributed = False'
             if cfg.log.stdout:
                 print(msg)
             warnings.warn(msg)
-            return
-        
-        self.distributed = True
-        world_size, rank, local_rank = [getattr(cfg, k) for k in distparams]
-        torch.cuda.set_device(local_rank)
-        if cfg.log.stdout:
-            msg = f'Distributed init: {rank=}, {local_rank=}, {world_size=}'
-        
-        self.world_size, self.rank, self.local_rank = world_size, rank, local_rank
-        dist.init_process_group(
-            backend=cfg.ddp_backend, init_method=cfg.ddp_url, 
-            world_size=world_size, rank=rank
-        )
-        dist.barrier()
-        self.setup_for_distributed(rank == 0)
+
+        else:
+            self.distributed = True
+            world_size, rank, local_rank = [getattr(cfg, k) for k in distparams]
+            torch.cuda.set_device(local_rank)
+            if cfg.log.stdout:
+                msg = f'Distributed init: {rank=}, {local_rank=}, {world_size=}'
+            
+            self.world_size, self.rank, self.local_rank = world_size, rank, local_rank
+            dist.init_process_group(
+                backend=cfg.ddp_backend, init_method=cfg.ddp_url, 
+                world_size=world_size, rank=rank
+            )
+            dist.barrier()
+            self.set_distprint(rank == 0)
+
+    @property
+    def mod(self):
+        return self.cfg.mod
+    
+    @property
+    def dat(self):
+        return self.cfg.dat
+    
+    @property
+    def opt(self):
+        return self.cfg.opt
+    
+    @property
+    def log(self):
+        return self.cfg.log
 
     @staticmethod
-    def setup_for_distributed(is_master:bool) -> None:
+    def set_distprint(is_master:bool) -> None:
         """Disables printing when not in master process
 
         From https://github.com/pytorch/vision/blob/main/references/classification/utils.py
@@ -94,14 +109,215 @@ class Runner:
         __builtin__.print = print
 
     @staticmethod
+    def forward_fn(inputs, targets, model, loss_fn) -> Tuple[Tensor, TensorSequence]:
+        raise NotImplementedError('Missing implementation of `forward_fn`.')
+    
+    def parse_augmentations(self) -> Sequence[Callable]:
+        raise NotImplementedError('Missing implementation of `parse_augmentations`.')
+    
+    def parse_data(self) -> Tuple[DataLoader, DataLoader, QuixDataset, QuixDataset]:
+        raise NotImplementedError('Missing implementation of `parse_data`.')
+    
+    def parse_model(self) -> nn.Module:
+        raise NotImplementedError('Missing implementation of `parse_model`.')
+    
+    def parse_loss(self) -> Callable:
+        raise NotImplementedError('Missing implementation of `parse_loss`.')
+    
+    def parse_param_groups(self, model) -> Sequence[Tensor]:
+        raise NotImplementedError('Missing implementation of `parse_param_groups`.')
+    
+    def parse_optimizer(self, model) -> Optimizer:
+        raise NotImplementedError('Missing implementation of `parse_optimizer`.')
+    
+    def parse_scheduler(self, optimizer, traindata) -> Optional[LRScheduler]:
+        raise NotImplementedError('Missing implementation of `parse_scheduler`.')
+    
+    def parse_scaler(self) -> Optional[GradScaler]:
+        raise NotImplementedError('Missing implementation of `parse_scaler`.')
+    
+    def parse_ddp(self, model) -> Sequence[nn.Module]:
+        raise NotImplementedError('Missing implementation of `parse_ddp`.')     
+    
+    def parse_ema(self, model_without_ddp) -> Optional[AveragedModel]:
+        raise NotImplementedError('Missing implementation of `parse_ema`.')     
+    
+    def parse_checkpoint(self, model, optimizer, scheduler, scaler, model_ema) -> None:
+        raise NotImplementedError('Missing implementation of `parse_checkpoint`.')
+
+    def parse_logger(self, start_epoch) -> Optional[BaseLogHandler]:
+        raise NotImplementedError('Missing implementation of `parse_logger`.')
+        
+    def parse_run(self):
+        trainloader, valloader, traindata, valdata = self.parse_data()
+        model = self.parse_model()
+        loss_fn = self.parse_loss()
+        optimizer = self.parse_optimizer(model)
+        scaler = self.parse_scaler()
+        scheduler = self.parse_scheduler(optimizer, traindata)
+        model, model_without_ddp = self.parse_ddp(model)
+        model_ema = self.parse_ema(model_without_ddp)
+        start_epoch = self.parse_checkpoint(
+            model_without_ddp, optimizer, scheduler, scaler, model_ema
+        )
+        logger = self.parse_logger(start_epoch)
+        processor = BatchProcessor(
+            self.opt.accumulation_steps,
+            self.mod.model_ema_steps,
+            self.mod.model_ema_warmup_epochs,
+            self.opt.gradclip,
+            logger,
+            self.opt.consistent_batch_size
+        )
+        return {
+            'trainloader':trainloader,
+            'valloader':valloader,
+            'model':model,
+            'model_without_ddp': model_without_ddp,
+            'model_ema':model_ema,
+            'loss_fn':loss_fn,
+            'optimizer':optimizer,
+            'scheduler':scheduler,
+            'scaler':scaler,
+            'processor':processor,
+            'start_epoch':start_epoch,
+            'epoch_context': traindata.shufflecontext,
+            'proc_context': nullcontext,
+            'fwd_context': autocast if self.cfg.opt.amp else nullcontext,
+        }
+
+
+    def process_epoch(
+        self, 
+        epoch:int,
+        trainloader:DataLoader,
+        valloader:DataLoader, 
+        model:nn.Module, 
+        model_ema:AveragedModel,
+        loss_fn:Callable,
+        optimizer:Optimizer,
+        scheduler:LRScheduler,
+        scaler:GradScaler,
+        processor:BatchProcessor, 
+        epoch_context:CallableContext,
+        proc_context:CallableContext,
+        fwd_context:CallableContext,
+        training:bool=True,
+        **logging_kwargs
+    ):
+        loader = trainloader if training else valloader
+        processor_kwargs = {
+            'optimizer':optimizer, 'scheduler':scheduler, 'scaler':scaler, 
+            'epoch':epoch, 'model':model, 'averaged_model':model_ema, 
+            'context':proc_context, 'training':training, **logging_kwargs
+        }
+        with epoch_context():
+            for iteration, data in enumerate(loader):
+                final_batch = False
+                if hasattr(loader, '__len__'):
+                    final_batch = ((len(loader) - 1) == iteration)
+                n_inputs = len(self.cfg.dat.input_ext)
+                inputs, targets = data[:n_inputs], data[n_inputs:]
+                kwargs = {
+                    'iteration': iteration, 'inputs': inputs, 
+                    'targets': targets, 'final_batch':final_batch, 
+                    **processor_kwargs
+                }
+                with processor(**kwargs) as proc:
+                    with fwd_context():
+                        proc.loss, proc.outputs = self.forward_fn(inputs, targets, model, loss_fn)
+        return
+   
+    def run(self):
+        run_kwargs = self.parse_run()
+        start_epoch = run_kwargs.pop('start_epoch', 0)
+        model_without_ddp = run_kwargs.pop('model_without_ddp', None)
+        if self.cfg.test_only:
+            self.process_epoch(-1, **run_kwargs, training=False)
+            return
+        for epoch in range(start_epoch, self.cfg.epochs):
+            self.process_epoch(epoch, **run_kwargs, training=True)
+            self.process_epoch(epoch, **run_kwargs, training=False)
+            if self.log.savedir:
+                checkpoint = {
+                    'model': model_without_ddp,
+                    'optimizer': run_kwargs.get('optimizer', None),
+                    'scheduler': run_kwargs.get('scheduler', None),
+                    'epoch': epoch,
+                    'cfg': self.cfg,
+                }
+                if self.mod.model_ema:
+                    checkpoint['model_ema'] = run_kwargs.get('model_ema', None)
+                if self.opt.amp:
+                    checkpoint['scaler'] = run_kwargs.get('scaler', None)
+                if self.rank == 0:
+                    savepath_model = os.path.join(self.log.savedir, f'{self.log.custom_runid}_{epoch:08d}.pth')
+                    torch.save(checkpoint, savepath_model) # TODO: Rolling save
+        return
+
+    @classmethod
+    def argparse(
+        cls, 
+        mod:TMod=ModelConfig,       #type:ignore
+        dat:TDat=DataConfig,        #type:ignore
+        opt:TOpt=OptimizerConfig,   #type:ignore
+        log:TLog=LogConfig,         #type:ignore
+        **kwargs
+    ) -> AbstractRunner:
+        '''Parses a Run from dataclasses
+
+        Parameters
+        ----------
+        modcfg : Type[ModelConfig]
+            Dataclass for model configuration.
+        datcfg : Type[DataConfig]
+            Dataclass for data handling configuration.
+        optcfg : Type[OptimizerConfig]
+            Dataclass for optimizer configuration.
+        logcfg : Type[LogConfig]
+            Dataclass for logging configuration.
+        '''
+        runconfig = RunConfig.argparse(mod=mod,dat=dat,opt=opt,log=log,**kwargs)
+        return cls(runconfig)
+
+    def __repr__(self):
+        repr_str = self.__class__.__name__ + '(\n'
+        repr_str += f'  distributed: {self.distributed}\n'
+        repr_str += f'  rank: {self.rank}\n'
+        repr_str += f'  local_rank: {self.local_rank}\n'
+        repr_str += f'  world_size: {self.world_size}\n'
+        for line in self.cfg.__repr__().splitlines():
+            repr_str += f'  {line}\n'
+        repr_str += ')'
+        return repr_str
+    
+
+class Runner(AbstractRunner):
+
+    optimizer_dict = { # Fix later
+        'adamw': torch.optim.AdamW,
+        'adam': torch.optim.Adam
+    }
+
+    scheduler_dict = {
+        'cosinedecay': CosineDecay
+    }
+
+    def __init__(self, cfg:RunConfig[TMod,TDat,TOpt,TLog]):
+        super().__init__(cfg)
+        self.num_classes = self.cfg.dat.num_classes
+        if self.dat.dataset == 'IN1k':
+            self.num_classes = 1000
+
+    @staticmethod
     def forward_fn(inputs, targets, model, loss_fn):
         outputs = model(inputs)
         loss = loss_fn(outputs, targets)
         return loss, outputs
 
     def parse_augmentations(self):
-        train_sample_augs, train_batch_augs = parse_train_augs(self.cfg.dat)
-        val_sample_augs = parse_val_augs(self.cfg.dat)
+        train_sample_augs, train_batch_augs = parse_train_augs(self.dat, num_classes=self.num_classes)
+        val_sample_augs = parse_val_augs(self.dat)
         return train_sample_augs, train_batch_augs, val_sample_augs
 
     def parse_data(self):
@@ -110,21 +326,21 @@ class Runner:
 
         # Load Data
         use_extensions = None
-        if self.cfg.dat.input_ext is not None or self.cfg.dat.target_ext is not None:
-            if self.cfg.dat.input_ext is not None and self.cfg.dat.target_ext is not None:
-                use_extensions = self.cfg.dat.input_ext + self.cfg.dat.target_ext
+        if self.dat.input_ext is not None or self.dat.target_ext is not None:
+            if self.dat.input_ext is not None and self.dat.target_ext is not None:
+                use_extensions = self.dat.input_ext + self.dat.target_ext
             else:
                 raise ValueError('Both input_ext and target_ext must be set.')
 
         traindata = QuixDataset(
-            self.cfg.dat.dataset, 
-            self.cfg.dat.data_path,
+            self.dat.dataset, 
+            self.dat.data_path,
             train=True,
             override_extensions=use_extensions,
         )
         valdata = QuixDataset(
-            self.cfg.dat.dataset,
-            self.cfg.dat.data_path,
+            self.dat.dataset,
+            self.dat.data_path,
             train=False,
             override_extensions=use_extensions
         )
@@ -153,46 +369,41 @@ class Runner:
         def train_collate_fn(batch):
             return train_batch_augs(*default_collate(batch))
 
-        # TODO: Fix samplers!
+        # TODO: Add support for RASampler
+        sampler = DistributedSampler if self.distributed else SequentialSampler
         trainloader = DataLoader(
             traindata, 
             self.cfg.batch_size, 
-            sampler=None,
-            num_workers=self.cfg.dat.workers,
-            prefetch_factor=self.cfg.dat.prefetch,
+            sampler=sampler(traindata),
+            num_workers=self.dat.workers,
+            prefetch_factor=self.dat.prefetch,
             pin_memory=True,
             collate_fn=train_collate_fn
         )
         valloader = DataLoader(
             valdata, 
             self.cfg.batch_size,
-            sampler=None,
-            num_workers=self.cfg.dat.workers,
-            prefetch_factor=self.cfg.dat.prefetch,
+            sampler=sampler(valdata),
+            num_workers=self.dat.workers,
+            prefetch_factor=self.dat.prefetch,
             pin_memory=True,
             collate_fn=default_collate
         )
         return trainloader, valloader, traindata, valdata
     
     def parse_model(self):
-        num_classes = self.cfg.dat.num_classes
-        if self.cfg.dat.dataset == 'IN1k':
-            num_classes = 1000        
-
         # Create Model
-        model = tv.models.get_model(self.cfg.mod.model, weights=self.cfg.mod.pretrained_weights, num_classes=num_classes)
+        model = tv.models.get_model(self.mod.model, weights=self.mod.pretrained_weights, num_classes=self.num_classes)
         model.to(self.cfg.device)
-
-        if self.cfg.mod.sync_bn: # Add test for distributed...
+        if self.mod.sync_bn and self.distributed:
             model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
-
         return model
-
-    def parse_optimization(self, model:nn.Module, n_samples:Optional[int]=None):
-        # Get loss function
-        loss_fn = nn.CrossEntropyLoss(label_smoothing=self.cfg.opt.smoothing)
-
-        # Set up weight decay
+    
+    def parse_loss(self):
+        return nn.CrossEntropyLoss(label_smoothing=self.cfg.opt.smoothing)
+    
+    def parse_param_groups(self, model):
+        # Set up weight decay groups
         norm_classes = (
             torch.nn.modules.batchnorm._BatchNorm,
             torch.nn.LayerNorm,
@@ -237,39 +448,46 @@ class Runner:
             if len(params[key]) > 0:
                 parameters.append({"params": params[key], "weight_decay": params_weight_decay[key]})
 
-        # Parsing optimizer
-        optcls = self.optimizer_dict.get(self.cfg.opt.optim, None)
+        return parameters
+    
+    def parse_optimizer(self, model:nn.Module) -> Optimizer:
+        parameters = self.parse_param_groups(model)
+        optcls = self.optimizer_dict.get(self.opt.optim, None)
         if optcls is None:
-            raise ValueError(f'Optimizer: {self.cfg.opt.optim} not found.')
-        optimizer = optcls(parameters, lr=self.cfg.opt.lr, weight_decay=self.cfg.opt.weight_decay)
+            raise ValueError(f'Optimizer: {self.opt.optim} not found.')
+        optimizer = optcls(parameters, lr=self.opt.lr, weight_decay=self.opt.weight_decay)
+        return optimizer
+    
+    def parse_scaler(self) -> Optional[GradScaler]:
+        return GradScaler() if self.cfg.opt.amp else None
 
-        # Parsing scaler for amp
-        scaler = GradScaler() if self.cfg.opt.amp else None
-
-        # Initialize LR Scheduler
+    def parse_scheduler(self, optimizer:Optimizer, traindata:QuixDataset):
         schcls = self.scheduler_dict.get(self.cfg.opt.lr_scheduler, None)
         if schcls is None:
             raise ValueError(f'Scheduler: {self.cfg.opt.lr_scheduler} not found.')        
-        scheduler = schcls(
+        return schcls(
             optimizer, self.cfg.opt.lr_init, self.cfg.opt.lr_min, self.cfg.epochs, 
-            self.cfg.opt.lr_warmup_epochs / self.cfg.epochs, self.cfg.batch_size, n_samples
+            self.cfg.opt.lr_warmup_epochs / self.cfg.epochs, self.cfg.batch_size, len(traindata)
         )
-
-        # Init model as DDP
+    
+    def parse_ddp(self, model):
         model_without_ddp = model
-        if self.distributed: # Add flag for distributed
-            model = DDP(model, device_ids=None) # Add device ids
+        if self.distributed:
+            model = DDP(model, device_ids=[self.local_rank])
             model_without_ddp = model.module
-
-        # Init model EMA
+        return model, model_without_ddp
+    
+    def parse_ema(self, model_without_ddp):
         model_ema = None
-        if self.cfg.opt.model_ema and self.distributed and self.world_size: 
-            adjust = self.world_size * self.cfg.batch_size * self.cfg.opt.model_ema_steps / self.cfg.epochs
-            alpha = 1.0 - self.cfg.opt.model_ema_decay
+        if self.cfg.mod.model_ema and self.distributed and self.world_size: 
+            adjust = self.world_size * self.cfg.batch_size * self.cfg.mod.model_ema_steps / self.cfg.epochs
+            alpha = 1.0 - self.cfg.mod.model_ema_decay
             alpha = min(1.0, alpha*adjust)
-            model_ema = None # Add EMA class
+            model_ema = ExponentialMovingAverage(model_without_ddp, decay=1-alpha, device=self.cfg.device)
 
-        # Resume run from checkpoint, if applicable
+        return model_ema
+    
+    def parse_checkpoint(self, model_without_ddp, optimizer, scheduler, scaler, model_ema):
         start_epoch = self.cfg.start_epoch
         if self.cfg.mod.resume:
             checkpoint = torch.load(self.cfg.mod.resume, map_location='cpu')
@@ -282,102 +500,7 @@ class Runner:
                 model_ema.load_state_dict(checkpoint['model_ema'])
             if scaler:
                 scaler.load_state_dict(checkpoint['scaler'])
+        return start_epoch    
 
-        return loss_fn, optimizer, scaler, scheduler, model_ema, start_epoch
-    
 
-    def parse_run(self):
-        trainloader, valloader, traindata, valdata = self.parse_data()
-        model = self.parse_model()
-        loss_fn, optimizer, scaler, scheduler, model_ema, start_epoch = self.parse_optimization(model, len(traindata))
-        processor = BatchProcessor(
-            optimizer, scheduler, scaler, 
-            self.cfg.opt.accumulation_steps, 
-            self.cfg.opt.gradclip,
-            None, # TODO: Missing LogHandler
-            self.cfg.opt.consistent_batch_size
-        )
-        return {
-            'trainloader':trainloader,
-            'valloader':valloader,
-            'model':model,
-            'loss_fn':loss_fn,
-            'processor':processor,
-            'model_ema':model_ema,
-            'start_epoch':start_epoch,
-            'epoch_context': traindata.shufflecontext,
-            'proc_context': nullcontext,
-            'fwd_context': autocast if self.cfg.opt.amp else nullcontext,
-        }
-    
-    def process_epoch(
-        self, 
-        epoch,
-        loader, 
-        model, 
-        loss_fn,
-        processor, 
-        epoch_context,
-        proc_context,
-        fwd_context,
-        train=True,
-        **logging_kwargs
-    ):
-        with epoch_context():
-            for iteration, data in enumerate(loader):
-                final_batch = False
-                if hasattr(loader, '__len__'):
-                    final_batch = ((len(loader) - 1) == iteration)
-                n_inputs = len(self.cfg.dat.input_ext)
-                inputs, targets = data[:n_inputs], data[n_inputs:]
-                with processor(epoch, iteration, inputs, targets, final_batch, proc_context, train) as train:
-                    with fwd_context():
-                        train.loss, train.outputs = self.forward_fn(inputs, targets, model, loss_fn)
-        return
-   
-    def run(self):
-        run_kwargs = self.parse_run()
-        if self.cfg.test_only:
-            self.process_epoch(-1, **run_kwargs, train=False)
-            return
-        for epoch in range(self.cfg.epochs):
-            self.process_epoch(epoch, **run_kwargs, train=True)
-            self.process_epoch(epoch, **run_kwargs, train=False)
-        return
-
-    @classmethod
-    def argparse(
-        cls, 
-        mod:TMod=ModelConfig,       #type:ignore
-        dat:TDat=DataConfig,        #type:ignore
-        opt:TOpt=OptimizerConfig,   #type:ignore
-        log:TLog=LogConfig,         #type:ignore
-        **kwargs
-    ) -> Runner:
-        '''Parses a Run from dataclasses
-
-        Parameters
-        ----------
-        modcfg : Type[ModelConfig]
-            Dataclass for model configuration.
-        datcfg : Type[DataConfig]
-            Dataclass for data handling configuration.
-        optcfg : Type[OptimizerConfig]
-            Dataclass for optimizer configuration.
-        logcfg : Type[LogConfig]
-            Dataclass for logging configuration.
-        '''
-        runconfig = RunConfig.argparse(mod=mod,dat=dat,opt=opt,log=log,**kwargs)
-        return cls(runconfig)
-    
-    def __repr__(self):
-        repr_str = self.__class__.__name__ + '(\n'
-        repr_str += f'  distributed: {self.distributed}\n'
-        repr_str += f'  rank: {self.rank}\n'
-        repr_str += f'  local_rank: {self.local_rank}\n'
-        repr_str += f'  world_size: {self.world_size}\n'
-        for line in self.cfg.__repr__().splitlines():
-            repr_str += f'  {line}\n'
-        repr_str += ')'
-        return repr_str
 
