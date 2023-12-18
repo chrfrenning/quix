@@ -218,7 +218,8 @@ class AbstractRunner:
                 if hasattr(loader, '__len__'):
                     final_batch = ((len(loader) - 1) == iteration)
                 n_inputs = len(self.input_ext) #TODO: fix
-                inputs, targets = data[:n_inputs], data[n_inputs:]
+                inputs = map(lambda x: x.to(self.cfg.device), data[:n_inputs])
+                targets = map(lambda x: x.to(self.cfg.device), data[n_inputs:])
                 kwargs = {
                     'iteration': iteration, 'inputs': inputs, 
                     'targets': targets, 'final_batch':final_batch, 
@@ -317,8 +318,8 @@ class Runner(AbstractRunner):
 
     @staticmethod
     def forward_fn(inputs, targets, model, loss_fn):
-        outputs = model(inputs)
-        loss = loss_fn(outputs, targets)
+        outputs = model(*inputs)
+        loss = loss_fn(outputs, *targets)
         return loss, outputs
 
     def parse_augmentations(self):
