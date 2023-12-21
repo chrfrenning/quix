@@ -2,12 +2,13 @@ from __future__ import annotations
 import os
 import json
 import yaml
+import toml
 from functools import partial
 from argparse import ArgumentParser, Namespace
-from dataclasses import dataclass, field, fields, _MISSING_TYPE
+from dataclasses import dataclass, field, fields, _MISSING_TYPE, asdict
 from typing import (
     Type, TypeVar, Generic, Any, Dict, Optional, ClassVar, Union,
-    Sequence, List, Tuple, get_type_hints, get_args, get_origin
+    Sequence, List, Tuple, Iterable, get_type_hints, get_args, get_origin
 )
 from .cfgutils import (
     metadata_decorator, _repr_helper, _get_parser, _fromenv, _deffac
@@ -70,7 +71,7 @@ class ModelConfig(_BaseConfig):
     pretrained_weights: Optional[str] = None
     resume: Optional[str] = None
     sync_bn: bool = False
-    model_ema:bool = add_argument(default=False, action='store_true')
+    model_ema:bool = False
     model_ema_steps:int = 32
     model_ema_decay:float = 0.9998
     model_ema_warmup_epochs:int = 5
@@ -89,6 +90,10 @@ class DataConfig(_BaseConfig):
         Number of workers for dataloader.
     prefetch : int
         Prefetch factor for dataloader.
+    loader_drop_last : bool
+        Drop the last batch in the dataloader.
+    shuffle_train : bool
+        Shuffle training set.
     input_ext : str
         Extensions for inputs in dataset.
     target_ext : str
@@ -126,8 +131,10 @@ class DataConfig(_BaseConfig):
     '''
     data_path:str
     dataset:str = 'IN1k'
-    workers:int = 16
+    workers:int = 4
     prefetch:int = 2
+    loader_drop_last:bool = True
+    shuffle_train:bool = True
     input_ext:List[str] = add_argument(default=None, nargs='+')
     target_ext:List[str] = add_argument(default=None, nargs='+')
     num_classes:Optional[int] = None
@@ -139,13 +146,13 @@ class DataConfig(_BaseConfig):
         default=['nearest', 'bilinear', 'bicubic'], nargs='*', choices=['nearest', 'bilinear', 'bicubic']
     )
     hflip:bool = True
-    vflip:bool = add_argument(default=False, action='store_true')
+    vflip:bool = False
     jitter:bool = True
-    aug3:bool = add_argument(default=False, action='store_true')
+    aug3:bool = False
     randaug:str = add_argument(default='medium', choices=['none', 'light', 'medium', 'strong'])
     cutmix_alpha:float = 0.0
     mixup_alpha:float = 0.0
-    ra_sampler:bool = add_argument(default=False, action='store_true')
+    ra_sampler:bool = False
     ra_reps:int = 2
 
 
@@ -198,8 +205,8 @@ class OptimizerConfig(_BaseConfig):
     opt_epsilon:float = 1e-7
     gradclip:float = 1.0
     accumulation_steps:int = 1
-    amsgrad:bool = add_argument(default=False, action='store_true')
-    amp:bool = add_argument(default=False, action='store_true')
+    amsgrad:bool = False
+    amp:bool = False
     consistent_batch_size:bool = True
     smoothing:float = 0.0
     lr_scheduler:str = 'cosinedecay'
@@ -215,17 +222,23 @@ class LogConfig(_BaseConfig):
     ----------
     savedir : str
         Directory for logs and model checkpoints.
+    rolling_checkpoints : int
+        Number of rolling checkpoints, disabled with zero.
     logfreq : int
         Logging frequency [in iterations].
     stdout : bool
         Flag to print logs to stdout.
     custom_runid : Optional[str]
         Custom run id for logging.
+    project : Optional[str]
+        Custom project for logging.
     '''
-    savedir:Optional[str] = None
+    savedir:str = os.path.expanduser('~')
+    rolling_checkpoints:int = 5
     logfreq:int = 50
-    stdout:bool = add_argument(default=False, action='store_true')
+    stdout:bool = False
     custom_runid:Optional[str] = _fromenv('RUNID', str)
+    project:Optional[str] = _fromenv('PROJECT', str)
 
 
 TMod = TypeVar('TMod', bound=ModelConfig)
@@ -249,7 +262,7 @@ class RunConfig(Generic[TMod,TDat,TOpt,TLog]):
         Optimization configuration parameters.
     log : LogConfig
         Logging configuration parameters.
-    cfg : str
+    cfgfile : str
         Path to config file in JSON/YAML format.
     batch_size : int
         Batch size for training. 
@@ -270,33 +283,48 @@ class RunConfig(Generic[TMod,TDat,TOpt,TLog]):
     ddp_master_port : str
         Port for MASTER_PORT [DDP]. 
     world_size : int
-        World size for DDP. If None, this is inferred from environment variables.
+        World size for DDP, inferred from environment variables.
     rank : int
-        Rank for DDP. If None, this is inferred from environment variables.
+        Rank for DDP, inferred from environment variables.
+    local_world_size : int
+        Local world size for DDP, inferred from environment variables.
     local_rank : int
-        Local device rank for DDP. If None, this is inferred from environment variables.
+        Local device rank for DDP, inferred from environment variables.
     '''
     mod:TMod = add_argument(no_parse=True)
     dat:TDat = add_argument(no_parse=True)
     opt:TOpt = add_argument(no_parse=True)
     log:TLog = add_argument(no_parse=True)
-    cfg:str = add_argument(default=[], nargs='*')
+    cfgfile:str = add_argument(default=[], nargs='*')
     batch_size:int = 256
     epochs:int = 300
     start_epoch: int = 0
-    test_only:bool = add_argument(default=False, action='store_true')
+    test_only:bool = False
     ddp_backend:str = 'nccl'
     ddp_url:str = 'env://'
-    ddp_master_address:str = 'localhost'
-    ddp_master_port:str = '29500'
     device:str = add_argument(default='cuda', choices=['cuda', 'cpu'])
+    ddp_master_address:Optional[str] = _fromenv('MASTER_ADDR', str)
+    ddp_master_port:Optional[str] = _fromenv('MASTER_PORT', str)
     world_size:Optional[int] = _fromenv('WORLD_SIZE', int)
     rank:Optional[int] = _fromenv('RANK', int)
+    local_world_size:Optional[int] = _fromenv('LOCAL_WORLD_SIZE', int)
     local_rank:Optional[int] = _fromenv('LOCAL_RANK', int)
 
     def __repr__(self):
         return _repr_helper(self)
     
+    def to_dict(self):
+        return asdict(self)
+    
+    def to_json(self):
+        return json.dumps(asdict(self))
+    
+    def to_yaml(self):
+        return yaml.dump(asdict(self))
+    
+    def to_toml(self):
+        return toml.dumps(asdict(self))
+        
     @classmethod
     def _get_required(
         cls, 
@@ -449,18 +477,27 @@ class RunConfig(Generic[TMod,TDat,TOpt,TLog]):
         Dict[str]
             Parsed config parameters from passed files.
         '''
+        def unnest(dct):
+            mod, dat, opt, log = [dct.pop(n, {}) for n in ['mod', 'dat', 'opt', 'log']]
+            return {**dct, **mod, **dat, **opt, **log}
+
+        loaders = {
+            '.yaml': yaml.safe_load,
+            '.yml': yaml.safe_load,
+            '.json': json.load,
+            '.toml': toml.load,
+        }
         config = {}
         if file_paths is not None:
             for file_path in file_paths:
                 if not os.path.exists(file_path):
-                    raise FileNotFoundError(f"Config file not found: {file_path}")                
+                    raise FileNotFoundError(f"Config file not found: {file_path}")
+                ext = os.path.splitext(file_path)[-1]
+                loader = loaders.get(ext, None)
+                if loader is None:
+                    raise ValueError(f"Unsupported config file extension {ext}.")
                 with open(file_path, 'r') as file:
-                    if file_path.endswith('.json'):
-                        config.update(json.load(file))
-                    elif file_path.endswith('.yaml') or file_path.endswith('.yml'):
-                        config.update(yaml.safe_load(file))
-                    else:
-                        raise ValueError("Unsupported config file format")
+                    config.update(unnest(loader(file)))
 
         # Fix dashes for python naming
         config = {k.replace('-', '_'):v for k,v in config.items()}
@@ -496,7 +533,7 @@ class RunConfig(Generic[TMod,TDat,TOpt,TLog]):
         else:
             args = parser.parse_args()
         
-        config = cls.load_config(args.cfg)
+        config = cls.load_config(args.cfgfile)
         parser.set_defaults(**config)
         
         if '_testargs' in kwargs:
@@ -514,3 +551,38 @@ class RunConfig(Generic[TMod,TDat,TOpt,TLog]):
             parser.error(f"Parser missing required arguments: {', '.join(missing_args)}")
 
         return cls.from_namespace(args, *allcfgs)
+    
+    @classmethod
+    def from_dict(
+        cls,
+        modcfg:Type[TMod]=ModelConfig,          #type: ignore
+        datcfg:Type[TDat]=DataConfig,           #type: ignore
+        optcfg:Type[TOpt]=OptimizerConfig,      #type: ignore
+        logcfg:Type[TLog]=LogConfig,            #type: ignore
+        **dict,
+    ) -> RunConfig[TMod,TDat,TOpt,TLog]:
+        '''Parses a Quix RunConfig by passing a dictionary.
+
+        Parameters
+        ----------
+        modcfg : Type[ModelConfig]
+            Dataclass for model configuration.
+        datcfg : Type[DataConfig]
+            Dataclass for data handling configuration.
+        optcfg : Type[OptimizerConfig]
+            Dataclass for optimizer configuration.
+        logcfg : Type[LogConfig]
+            Dataclass for logging configuration.
+        '''
+        from functools import reduce
+
+        def __val2str(v):
+            if not isinstance(v,str) and isinstance(v, Iterable):
+                return [str(q) for q in v]
+            return [str(v)]
+
+        _testargs = reduce(
+            lambda a,b:a+b,
+            [[f'--{k.replace("_", "-")}'] + __val2str(v) for k,v in dict.items()]
+        )
+        return cls.argparse(modcfg, datcfg, optcfg, logcfg, _testargs=_testargs)

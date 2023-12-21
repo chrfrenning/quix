@@ -246,7 +246,7 @@ class PIL(EncoderDecoder):
     >>> image = decoder(some_byte_data)
     >>> byte_data = encoder(image)
     '''
-    def __init__(self, mode:str):
+    def __init__(self, mode:str, convert_to:Optional[str]='RGB'):
         '''Initializes the class label encoder/decoder.
 
         Parameters
@@ -261,10 +261,14 @@ class PIL(EncoderDecoder):
         '''
         super().__init__(mode)
         self.supported_extensions = Image.registered_extensions()
+        self.convert_to = convert_to
         self._default_tv = 'image'
 
     def _decode(self, data:bytes):
-        return Image.open(BytesIO(data))
+        img = Image.open(BytesIO(data))
+        if self.convert_to is not None:
+            return img.convert(self.convert_to)
+        return img
     
     def _encode(self, img:Image.Image):
         assert img.format is not None, f'PIL image must have a set format!'

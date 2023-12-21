@@ -64,10 +64,10 @@ class TestArgparseParsing(unittest.TestCase):
 
     def test_json_config(self):
         # Test behavior with json file
-        jsonpath = os.path.realpath(
+        cfgpath = os.path.realpath(
             os.path.join(os.getcwd(), os.path.dirname(__file__), 'rsc', 'test.json')
         )
-        test_args = ['--cfg', jsonpath]
+        test_args = ['--cfgfile', cfgpath]
         config = RunConfig.argparse(_testargs=test_args)
         self.assertEqual(config.mod.model, 'MyModel')
         self.assertEqual(config.dat.dataset, 'MyData')
@@ -76,15 +76,44 @@ class TestArgparseParsing(unittest.TestCase):
 
     def test_yml_config(self):
         # Test behavior with yaml file
-        jsonpath = os.path.realpath(
+        cfgpath = os.path.realpath(
             os.path.join(os.getcwd(), os.path.dirname(__file__), 'rsc', 'test.yml')
         )
-        test_args = ['--cfg', jsonpath]
+        test_args = ['--cfgfile', cfgpath]
         config = RunConfig.argparse(_testargs=test_args)
         self.assertEqual(config.mod.model, 'MyModel')
         self.assertEqual(config.dat.dataset, 'MyData')
         self.assertEqual(config.dat.data_path, '/work2/litdata/')
         # TODO: Add more assertions
+
+
+    def test_toml_config(self):
+        # Test behavior with yaml file
+        cfgpath = os.path.realpath(
+            os.path.join(os.getcwd(), os.path.dirname(__file__), 'rsc', 'test.toml')
+        )
+        test_args = ['--cfgfile', cfgpath]
+        config = RunConfig.argparse(_testargs=test_args)
+        self.assertEqual(config.mod.model, 'MyModel')
+        self.assertEqual(config.dat.dataset, 'MyData')
+        self.assertEqual(config.dat.data_path, '/work2/litdata/')
+        # TODO: Add more assertions
+
+    def test_nested_toml_config(self):
+        # Test behavior with yaml file
+        cfgpath = os.path.realpath(
+            os.path.join(os.getcwd(), os.path.dirname(__file__), 'rsc', 'testnest.toml')
+        )
+        test_args = ['--cfgfile', cfgpath]
+        config = RunConfig.argparse(_testargs=test_args)
+        self.assertEqual(config.batch_size, 128)
+        self.assertEqual(config.mod.model, 'MyModelNested')
+        self.assertEqual(config.dat.dataset, 'MyDataSet')
+        self.assertEqual(config.dat.data_path, '/path/to/data')
+        self.assertEqual(config.opt.lr, 1e-3)
+        self.assertEqual(config.opt.weight_decay, 1e-5)
+        self.assertEqual(config.dat.workers, 3)
+        self.assertEqual(config.dat.prefetch, 1)
 
     def test_custom_modelconfig(self):
         class MyModelConfig(ModelConfig):

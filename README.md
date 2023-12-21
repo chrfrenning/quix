@@ -93,6 +93,11 @@ a full specification of the **speciquix** will be addressed in the docs.
 currently, you can learn all about **quix** by looking really hard at the source code for a while. feel free to read the docstrings of some functions to understand more about **quix**!!! **quix** reminds you to look away if you feel queasy!
 
 
+### known issue
+
+`autoreload` (often used in notebooks for dev) is somewhat incompatible with custom config files, due to the way we monkey-patch the dataclass decorator in `_MetaConfig`. This means that you have to reload the full kernel if you want to test different runconfigs with `autoreload`. We consider this more of a slight inconvenience for niche use, and while we look to find ways to fix this, it is currently lowpri given the simple workaround.
+
+
 ## contribute?
 
 please consider helping **quix**$^\mathrm{TM}$ become a fully fledged adult by contributing to it's ongoing development. you can do this by testing quix and contributing to the codebase.

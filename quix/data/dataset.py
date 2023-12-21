@@ -57,6 +57,7 @@ import inspect
 import random
 import copy
 import pkg_resources
+import torch
 import torch.nn as nn
 import torchvision
 from contextlib import contextmanager
@@ -284,31 +285,29 @@ class QuixDataset(Dataset):
         idxpath = os.path.join(self.root, self.index_fname)
         if os.path.isfile(idxpath):
             with open(idxpath, 'r') as infile:
-                self.shard_index = json.load(infile)
+                shard_index = json.load(infile)
                 
         # If serialized indices does not exist, generate from scratch.
         else:
-            self.shard_index = self.generate_shard_index()        
+            shard_index = self.generate_shard_index()        
             if serialize:
                 with open(idxpath, 'w') as outfile:
-                    json.dump(self.shard_index, outfile)
+                    json.dump(shard_index, outfile)
+        
+        # Save shard keys
+        self.shard_keys = sorted(list(shard_index.keys()))
         
         # Generate offset index.
-        self.offset_index = self.generate_offset_index()
-        
-        # Order offsets deterministically
-        if deterministic_offset_order:
-            self.offset_index = sorted(
-                self.offset_index, 
-                key=self._shard_offset_key
-            )
+        self.offset_index = self.generate_offset_index(shard_index, deterministic_offset_order)
+        self.offset_order = torch.arange(len(self.offset_index)).share_memory_()
+        self.shard_bincount = self.offset_index[:,0].bincount()
         
         # Initialize transforms
         self.transforms = []
     
     @staticmethod
     def _shard_offset_key(x):
-        return (x[0], min(x[2:]))
+        return (x[0], min(x[1:]))
     
     @staticmethod
     def supports_tv_tensor():
@@ -349,21 +348,17 @@ class QuixDataset(Dataset):
         ...     for batch in dataloader:
         ...         # Processing code
         """
-        original_offsets = self.offset_index
+        shard_offsets = self.shard_bincount.cumsum(-1) - self.shard_bincount
+        shard_order = torch.randperm(len(self.shard_bincount))
+        new_order = torch.cat([
+            torch.randperm(self.shard_bincount[i].item()) + shard_offsets[i] #type:ignore
+            for i in shard_order
+        ])
         try:
-            copied_offsets = copy.deepcopy(self.offset_index)
-            shardkeys = list(self.shard_index.keys())
-            random.shuffle(shardkeys)
-            shardmap = {k:i for i,k in enumerate(shardkeys)}
-            random.shuffle(copied_offsets)
-            self.offset_index = sorted( # type:ignore
-                copied_offsets, 
-                key=lambda x: shardmap.get(x[0]) # type:ignore
-            )
-
+            self.offset_order[:] = new_order
             yield
         finally:
-            self.offset_index = original_offsets
+            self.offset_order[:] = torch.arange(len(self.offset_index))
                         
     def __len__(self):
         return self.mod_length if self.mod_length > 0 else len(self.offset_index)
@@ -371,14 +366,12 @@ class QuixDataset(Dataset):
     def __getitem__(self, key):
         # Check modulo sampling
         key = key % len(self.offset_index) if self.mod_length > 0 else key
+        order_index = self.offset_order[key]
         
         # Load keys, incl. shard name and extension offsets.
-        key_tuple = self.offset_index[key]
-        shard_name, offsets = key_tuple[0], key_tuple[2:]
-                
-        # Apply offsets in ascending order
-        os_argsort = [i for i, _ in sorted(enumerate(offsets), key=lambda x: x[1])]
-        os_sorted = sorted(offsets)
+        key_tuple = self.offset_index[order_index]
+        shard_name_idx, offsets = key_tuple[0], key_tuple[1:]
+        shard_name = self.shard_keys[shard_name_idx]
         
         # Generate list for storing outputs
         out = [None]*len(offsets)
@@ -386,7 +379,8 @@ class QuixDataset(Dataset):
         # Load shard and retrieve files with extensions at offsets
         shard_path = os.path.join(self.root, shard_name)
         with tarfile.open(shard_path, 'r') as tar:
-            for extidx, offset in zip(os_argsort, os_sorted):
+            for extidx in offsets.argsort():
+                offset = offsets[extidx].item()
                 tar.fileobj.seek(offset)                        # type: ignore
                 member = tarfile.TarInfo.fromtarfile(tar)
                 data = tar.extractfile(member).read()           # type: ignore
@@ -546,7 +540,7 @@ class QuixDataset(Dataset):
         -------
         Dict[str, Dict[str, int]]
             Dictionary mapping each file in the tar shards to its offset.
-        """        
+        """
         shard_index = {}
         
         for file in self.shard_list:
@@ -577,28 +571,34 @@ class QuixDataset(Dataset):
         
         return shard_index
     
-    def generate_offset_index(self) -> List[Tuple[Union[str, int]]]:
+    def generate_offset_index(
+        self, 
+        shard_index:Dict[str, Dict[str, Dict[str, int]]], 
+        deterministic_offset_order:bool
+    ) -> torch.Tensor:
         """
-        Generates an index of offsets for each dataset item.
+        Generates an index of offsets for each dataset item as a shared tensor.
 
-        Notes
-        -----
-        This function is currently a bit of a bottleneck, and could stand to be improved
-        substantially for faster loading of massive datasets.
+        Parameters
+        ----------
+        shard_index : Dict[str, Dict[str, Dict[str, int]]]
+            The shard index dictionary.
+        deterministic_offset_order : bool
+            Flag for setting deterministic offset ordering.
 
         Returns
         -------
-        List[Tuple[Union[str, int]]]
-            List of tuples containing shard names and offsets for each dataset item.
+        torch.Tensor
+            Tensor containing shard key indices and offsets for each sample.
         """
         offsets = []
 
-        for key in self.shard_index:
+        for key in shard_index:
             # Generate list of samples which share the relevant extensions
             sets = []
             for extension in self.use_extensions:
-                if extension in self.shard_index[key]:
-                    sets.append(set(self.shard_index[key][extension]))
+                if extension in shard_index[key]:
+                    sets.append(set(shard_index[key][extension]))
             
             if not sets:  # if no sets were appended, skip this shard
                 continue
@@ -612,14 +612,24 @@ class QuixDataset(Dataset):
                 cur_offsets = []
 
                 for extension in self.use_extensions:
-                    if extension in self.shard_index[key] and m in self.shard_index[key][extension]:
-                        cur_offsets.append(self.shard_index[key][extension][m])
+                    if extension in shard_index[key] and m in shard_index[key][extension]:
+                        cur_offsets.append(shard_index[key][extension][m])
                     else:
                         break
                 else:
-                    full_list.append((key, m, *cur_offsets))
+                    full_list.append((self.shard_keys.index(key), *cur_offsets))
 
             offsets += full_list
+
+        # Order offsets deterministically if flag is set
+        if deterministic_offset_order:
+            offsets = sorted(
+                offsets, 
+                key=self._shard_offset_key
+            )
+
+        # Convert offsets to a tensor with shared memory.
+        offsets = torch.tensor(offsets).share_memory_()
 
         return offsets
 

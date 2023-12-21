@@ -7,6 +7,7 @@ import torchvision.transforms.v2 as v2
 import warnings
 import random
 import numpy as np
+from torch.utils.data import default_collate
 from PIL import Image, ImageFilter, ImageOps, ImageEnhance
 from typing import (
     Optional, Tuple, Callable, Dict, Any, List,
@@ -110,6 +111,8 @@ class ToRGBTensor:
 class Identity:
 
     def __call__(self, *args):
+        if len(args) == 1:
+            return args[0]
         return args
 
 
@@ -125,6 +128,15 @@ RANDAUG_DICT = {
     'medium': (2, 15),
     'strong': (2, 20),
 }
+
+class DefaultCollateWrapper:
+
+    def __init__(self, fn):
+        self.fn = fn
+
+    def __call__(self, batch):
+        return self.fn(*default_collate(batch))
+
 
 def parse_train_augs(cfg:DataConfig, num_classes:Optional[int]=None) -> Tuple[Callable,Callable]:
     # Get interpolation modes
@@ -153,7 +165,7 @@ def parse_train_augs(cfg:DataConfig, num_classes:Optional[int]=None) -> Tuple[Ca
     elif cfg.randaug != 'none':
         mainaug = randaug
     else:
-        mainaug = identity
+        mainaug = identity # TODO: Something weird happens when this is on its own, tuple?
 
     # Random resize crop (randomize interpolations)
     resizecrop = v2.RandomChoice([
@@ -196,10 +208,10 @@ def parse_train_augs(cfg:DataConfig, num_classes:Optional[int]=None) -> Tuple[Ca
     # Compose Augmentations
     sample_augs = v2.Compose([resizecrop, mainaug, *addaug])
 
-    return sample_augs, batch_augs
+    return sample_augs, DefaultCollateWrapper(batch_augs)
     
 
-def parse_val_augs(cfg:DataConfig, num_classes:Optional[int]=None) -> Callable:
+def parse_val_augs(cfg:DataConfig, num_classes:Optional[int]=None) -> Tuple[Callable, Callable]:
     val_img_size = cfg.val_size if cfg.val_size is not None else cfg.img_size
     sample_augs = v2.RandomResizedCrop(val_img_size, (1.0,1.0), antialias=True)
-    return sample_augs
+    return sample_augs, default_collate

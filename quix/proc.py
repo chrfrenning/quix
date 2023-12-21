@@ -13,7 +13,7 @@ from torch.cuda.amp.grad_scaler import GradScaler
 from contextlib import nullcontext
 from typing import Sequence, Callable, ContextManager, Optional, Union
 
-from .log import BaseLogHandler
+from .log import LogCollator
 
 TensorSequence = Union[Tensor, Sequence[Tensor]]
 CallableContext = Callable[[], ContextManager]
@@ -74,6 +74,7 @@ class _BatchProcessingContext(ContextManager):
         self.targets = targets
         self.final_batch = final_batch
         self.context = context
+        self.training = training
         self.logging_kwargs = logging_kwargs
         self.outputs:Optional[TensorSequence] = None
         self.loss:Optional[Tensor] = None
@@ -88,8 +89,8 @@ class _BatchProcessingContext(ContextManager):
             self.parent.optimize(
                 self.epoch, self.iteration, self.loss, self.optimizer, 
                 self.scheduler, self.scaler, self.model, self.averaged_model, 
-                self.inputs, self.outputs, self.targets, 
-                self.final_batch, self.context, **self.logging_kwargs
+                self.inputs, self.outputs, self.targets, self.final_batch, 
+                self.context, self.training, **self.logging_kwargs
             )
 
 class BatchProcessor(_AbstractBatchProcessor):
@@ -132,7 +133,7 @@ class BatchProcessor(_AbstractBatchProcessor):
         average_steps:int=0,
         average_warmup_epochs:int=0,
         gradient_clipping:Optional[float]=None,
-        logger:Optional[BaseLogHandler]=None,
+        logger:Optional[LogCollator]=None,
         consistent_batch_size:bool=True,
     ):
         '''Initializes the BatchProcessor with the specified parameters.
@@ -362,11 +363,14 @@ class BatchProcessor(_AbstractBatchProcessor):
                             averaged_model.n_averaged.fill_(0)
                     self._avg_iteration = 0
 
-        if self._logger:        
+        if self._logger:
+            last_lr = None
+            if scheduler is not None:
+                last_lr = scheduler.get_last_lr()[0]
             self._logger(
                 time=time.time(), epoch=epoch, iteration=iteration, loss=loss.item(), 
                 inputs=self._clean(inputs), outputs=self._clean(outputs), targets=self._clean(targets),
-                final_batch=final_batch, step_skipped=step_skipped, **logging_kwargs
+                final_batch=final_batch, step_skipped=step_skipped, last_lr=last_lr, **logging_kwargs
             )
 
     def __call__(

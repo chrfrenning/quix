@@ -1,0 +1,4 @@
+lr = 1e-3
+model = "MyModel"
+dataset = "MyData"
+data-path = "/work2/litdata/"

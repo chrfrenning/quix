@@ -1,0 +1,14 @@
+batch_size = 128
+
+[mod]
+model = "MyModelNested"
+
+[dat]
+dataset = "MyDataSet"
+data_path = "/path/to/data"
+prefetch = 1
+workers = 3
+
+[opt]
+lr = 1e-3
+weight_decay = 1e-5
