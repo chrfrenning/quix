@@ -592,7 +592,7 @@ class Runner(AbstractRunner):
         optcls = self.optimizer_dict.get(self.opt.optim, None)
         if optcls is None:
             raise ValueError(f'Optimizer: {self.opt.optim} not found.')
-        if self.opt.use_zero_redundancy_opt:
+        if self.opt.use_zero_redundancy_opt and self.distributed:
             optimizer = ZeroRedundancyOptimizer(
                 parameters, optcls, lr=self.opt.lr, weight_decay=self.opt.weight_decay
             )
