@@ -16,8 +16,8 @@ class CosineDecay(lr_scheduler._LRScheduler):
     
     def __init__(
         self, optimizer:Optimizer, lr_start:float, lr_stop:float, epochs:int, 
-        warmup_ratio:float, batch_size:Optional[int]=None, 
-        n_samples:Optional[int]=None, last_epoch:int=-1, verbose:bool=False
+        warmup_ratio:float, num_steps:Optional[int]=None, last_epoch:int=-1, 
+        verbose:bool=False
     ):
         '''Initializes scheduler.
 
@@ -27,8 +27,7 @@ class CosineDecay(lr_scheduler._LRScheduler):
             lr_stop (float): Stop learning rate.
             epochs (int): Length of decay schedule in epochs.
             warmup_ratio (float): Ratio of epochs to be used for warmup.
-            batch_size (int): Number of samples per batch/step.
-            n_samples (int): Total number of samples per epoch.
+            num_steps (int): Number of steps per epoch, from DataLoader length.
             last_epoch (int): Last epoch for continuation, standard from PyTorch. Default: -1
             verbose (bool): If True, prints a message to stdout for each update. Default: False.        
         '''
@@ -41,8 +40,8 @@ class CosineDecay(lr_scheduler._LRScheduler):
         self.optimizer = optimizer
 
         # For batchwise steps
-        if n_samples is not None and batch_size is not None:
-            self._epochsteps = -(-n_samples//batch_size)
+        if num_steps is not None:
+            self._epochsteps = num_steps
 
         # For epochwise steps
         else:

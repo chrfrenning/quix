@@ -17,6 +17,7 @@ from torch.utils.data import DataLoader, default_collate, SequentialSampler
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data.distributed import DistributedSampler
 from torch.optim import Optimizer
+from torch.distributed.optim.zero_redundancy_optimizer import ZeroRedundancyOptimizer
 from torch.optim.lr_scheduler import _LRScheduler as LRScheduler
 from torch.cuda.amp.grad_scaler import GradScaler
 from torch.cuda.amp.autocast_mode import autocast
@@ -255,7 +256,7 @@ class AbstractRunner:
         print('Parsing scaler...')
         scaler = self.parse_scaler()
         print('Parsing scheduler...')
-        scheduler = self.parse_scheduler(optimizer, traindata)
+        scheduler = self.parse_scheduler(optimizer, trainloader)
         print('Parsing DDP...')
         model = self.parse_ddp(model)
         print('Parsing EMA...')
@@ -591,19 +592,28 @@ class Runner(AbstractRunner):
         optcls = self.optimizer_dict.get(self.opt.optim, None)
         if optcls is None:
             raise ValueError(f'Optimizer: {self.opt.optim} not found.')
-        optimizer = optcls(parameters, lr=self.opt.lr, weight_decay=self.opt.weight_decay)
+        if self.opt.use_zero_redundancy_opt:
+            optimizer = ZeroRedundancyOptimizer(
+                parameters, optcls, lr=self.opt.lr, weight_decay=self.opt.weight_decay
+            )
+        else:
+            optimizer = optcls(parameters, lr=self.opt.lr, weight_decay=self.opt.weight_decay)
         return optimizer
     
     def parse_scaler(self) -> Optional[GradScaler]:
         return GradScaler() if self.cfg.opt.amp else None
 
-    def parse_scheduler(self, optimizer:Optimizer, traindata:QuixDataset):
+    def parse_scheduler(self, optimizer:Optimizer, trainloader:DataLoader):
         schcls = self.scheduler_dict.get(self.cfg.opt.lr_scheduler, None)
         if schcls is None:
-            raise ValueError(f'Scheduler: {self.cfg.opt.lr_scheduler} not found.')        
+            raise ValueError(f'Scheduler: {self.cfg.opt.lr_scheduler} not found.')
+        try:
+            num_steps = len(trainloader)
+        except:
+            num_steps = None
         return schcls(
             optimizer, self.cfg.opt.lr_init, self.cfg.opt.lr_min, self.cfg.epochs, 
-            self.cfg.opt.lr_warmup_epochs / self.cfg.epochs, self.cfg.batch_size, len(traindata)
+            self.cfg.opt.lr_warmup_epochs / self.cfg.epochs, num_steps
         )
     
     def parse_ddp(self, model):

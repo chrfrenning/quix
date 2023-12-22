@@ -7,7 +7,6 @@ from typing import Dict, Any, Sequence, Dict
 
 StrDict = Dict[str, Any]
 
-
 class AbstractLogger:
 
     def __init__(self, keywords:Sequence[str], *args, **kwargs):
