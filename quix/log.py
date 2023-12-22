@@ -3,20 +3,9 @@ import os
 import json
 import time
 
-from numbers import Number
-from collections import deque
-from typing import Dict, Any, Sequence, Union, Mapping, Optional, Dict
+from typing import Dict, Any, Sequence, Dict
 
 StrDict = Dict[str, Any]
-
-def _tostring(value: Any) -> Union[Number, str, Mapping]:
-    if value is None:
-        return 'None'
-    if isinstance(value, dict):
-        return {k: _tostring(v) for k, v in value.items()}
-    if isinstance(value, Number) or isinstance(value, str):
-        return value
-    return str(value)
 
 
 class AbstractLogger:

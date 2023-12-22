@@ -4,6 +4,13 @@
 
 **quix** is a PyTorch framework for streamlining experiment design for ML tasks. 
 
+## Current TODOs
+
+- Check and fix project TODOs
+- Fix stdout / logging
+- Batch size handling 
+- More rigorous testing using `torchrun`
+
 ## the TLDR;
 
 building pipelines for large ML experiments for HPC is not only tedious, but boring. **quix** is here to help to make your life **queasier** by being a quick way to speed up your latest ML experiments.

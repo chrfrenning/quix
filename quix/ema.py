@@ -20,8 +20,10 @@ class ExponentialMovingAverage(torch.optim.swa_utils.AveragedModel):
         device : Union[str, torch.device]
             Device to place EMA model on.
         '''
-        @torch.no_grad()
-        def ema_avg(avg_model_param, model_param, num_averaged):
-            return decay * avg_model_param + (1 - decay) * model_param
+        self.decay = decay
+        super().__init__(model, device, self.ema_avg, use_buffers=True) # type:ignore
 
-        super().__init__(model, device, ema_avg, use_buffers=True) # type:ignore
+    @torch.no_grad
+    def ema_avg(self, avg_model_param, model_param, num_averaged):
+        return self.decay * avg_model_param + (1 - self.decay) * model_param
+
