@@ -370,7 +370,8 @@ class BatchProcessor(_AbstractBatchProcessor):
             self._logger(
                 time=time.time(), epoch=epoch, iteration=iteration, loss=loss.item(), 
                 inputs=self._clean(inputs), outputs=self._clean(outputs), targets=self._clean(targets),
-                final_batch=final_batch, step_skipped=step_skipped, last_lr=last_lr, **logging_kwargs
+                final_batch=final_batch, step_skipped=step_skipped, last_lr=last_lr, training=training,
+                **logging_kwargs
             )
 
     def __call__(

@@ -169,7 +169,7 @@ class OptimizerConfig(_BaseConfig):
         Weight decay.
     norm_decay : float
         Weight decay for norm layers.
-    use_zero_redundancy_opt : bool
+    zro : bool
         Use ZeroRedundancyOptimizer for DDP.
     custom_decay_keys : str
         Keys for setting custom weight decay for certain parameters.
@@ -202,7 +202,7 @@ class OptimizerConfig(_BaseConfig):
     lr:float = 3e-3
     weight_decay:float = 2e-2
     norm_decay:float = 0.0
-    use_zero_redundancy_opt:bool = False
+    zro:bool = False
     custom_decay_keys:List[str] = add_argument(default=[], nargs='+')
     custom_decay_vals:List[float] = add_argument(default=[], nargs='+')
     opt_epsilon:float = 1e-7

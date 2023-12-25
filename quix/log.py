@@ -31,7 +31,7 @@ class AbstractLogger:
 class ProgressLogger(AbstractLogger):
 
     def __init__(self, *args, **kwargs):
-        super().__init__(['epoch', 'iteration'])
+        super().__init__(['epoch', 'iteration', 'training'])
 
 
 class LossLogger(AbstractLogger):
@@ -108,9 +108,11 @@ LoggerSequence = Sequence[AbstractLogger]
 class LogCollator:
 
     def __init__(
-        self, 
+        self,
         runid:str,
         root:str,
+        # rank:str,
+        # local_rank:str,
         loggers:LoggerSequence,
         logfoldername:str='log',
     ):
@@ -139,7 +141,7 @@ class LogCollator:
             **self.get_entries(**logging_kwargs)
         }
         mode = 'a' if os.path.isfile(self.file_path) else 'w'
-        print(log_entry)
+        # print(log_entry)
         with open(self.file_path, mode) as log_file:
             log_file.write(json.dumps(log_entry))
             log_file.write('\n')

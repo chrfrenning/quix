@@ -22,6 +22,7 @@ from torch.optim.lr_scheduler import _LRScheduler as LRScheduler
 from torch.cuda.amp.grad_scaler import GradScaler
 from torch.cuda.amp.autocast_mode import autocast
 from torch.optim.swa_utils import AveragedModel
+from torch.multiprocessing.spawn import spawn
 from typing import Tuple, Sequence, Optional, Dict, Any, ContextManager, Callable, Type, Union
 from ..cfg import (
     RunConfig, TMod, TDat, TOpt, TLog,
@@ -358,7 +359,7 @@ class AbstractRunner:
             self.process_epoch(epoch, **run_kwargs, training=False)
             self.checkpoint(epoch, **run_kwargs)
         return
-
+    
     @classmethod
     def argparse(
         cls, 
@@ -592,7 +593,7 @@ class Runner(AbstractRunner):
         optcls = self.optimizer_dict.get(self.opt.optim, None)
         if optcls is None:
             raise ValueError(f'Optimizer: {self.opt.optim} not found.')
-        if self.opt.use_zero_redundancy_opt and self.distributed:
+        if self.opt.zro and self.distributed:
             optimizer = ZeroRedundancyOptimizer(
                 parameters, optcls, lr=self.opt.lr, weight_decay=self.opt.weight_decay
             )
@@ -635,8 +636,8 @@ class Runner(AbstractRunner):
         return model_ema
     
     def parse_logger(self):
-        if self.distributed and self.rank != 0:
-            return None
+        # if self.distributed and self.rank != 0:
+        #     return None
         if (
             self.log.custom_runid is not None and
             self.log.project is not None
@@ -648,3 +649,25 @@ class Runner(AbstractRunner):
         return None
 
 
+def __worker(rank, runnercls:Type[Runner], cfgdict):
+    cfgdict['rank'] = rank
+    cfgdict['local_rank'] = rank
+    runnercls.from_dict(**cfgdict).run()
+
+
+def single_node_launcher(runnercls:Type[Runner], **cfgdict):
+    '''Function to launch single node multi-gpu training.
+
+    NOTE: The keyword arguments passed to this function are parsed
+          as a config file using the runner's `from_dict` 
+          instantiation method. 
+
+    Parameters
+    ----------
+    runnercls : Type[Runner]
+        A subclass of Runner for which to launch the training.
+    '''
+    world_size = torch.cuda.device_count()
+    cfgdict['world_size'] = world_size
+    cfgdict['local_world_size'] = world_size
+    spawn(__worker, (runnercls, cfgdict,), nprocs=world_size, join=True)
