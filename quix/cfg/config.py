@@ -537,6 +537,7 @@ class RunConfig(Generic[TMod,TDat,TOpt,TLog]):
             args = parser.parse_args()
         
         config = cls.load_config(args.cfgfile)
+        # TODO: Add test for types. 
         parser.set_defaults(**config)
         
         if '_testargs' in kwargs:

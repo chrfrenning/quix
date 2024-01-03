@@ -391,8 +391,8 @@ class QuixDataset(Dataset):
             for t in self.transforms:
                 out = t(out)
         
-        if len(out) == 1:
-            return out[0]
+        # if len(out) == 1:
+        #     return out[0]
 
         return tuple(out)
     
@@ -527,7 +527,7 @@ class QuixDataset(Dataset):
         for idx, ext in enumerate(self.use_extensions):
             head, wext = os.path.splitext(ext)
             wext = head if wext == '' else wext
-            assert wext in DEFAULT_DECODERS
+            assert wext in DEFAULT_DECODERS, f"{wext=} not in default decoders."
             if decoders[idx] is None:
                 decoders[idx] = DEFAULT_DECODERS[wext]
         

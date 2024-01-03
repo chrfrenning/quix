@@ -115,6 +115,16 @@ class TestArgparseParsing(unittest.TestCase):
         self.assertEqual(config.dat.workers, 3)
         self.assertEqual(config.dat.prefetch, 1)
 
+    def test_advanced_toml_config(self):
+        cfgpath = os.path.realpath(
+            os.path.join(os.getcwd(), os.path.dirname(__file__), 'rsc', 'torchrun_test.toml')
+        )
+        test_args = ['--cfgfile', cfgpath]
+        config = RunConfig.argparse(_testargs=test_args)
+        self.assertEqual(config.batch_size, 512)
+        self.assertEqual(config.dat.input_ext, ['jpg'])
+        self.assertEqual(config.dat.target_ext, ['cls'])
+
     def test_custom_modelconfig(self):
         class MyModelConfig(ModelConfig):
             '''Testing model config.

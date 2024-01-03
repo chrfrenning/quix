@@ -2,10 +2,23 @@ import torch
 import os
 import json
 import time
+import logging
 
 from typing import Dict, Any, Sequence, Dict
 
 StrDict = Dict[str, Any]
+
+def _getrunlog():
+    logger = logging.getLogger('quix.log')
+    logger.setLevel(logging.DEBUG)
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.DEBUG)
+    logfmt = logging.Formatter('%(levelname)s:%(asctime)s | %(message)s')
+    ch.setFormatter(logfmt)
+    logger.addHandler(ch)
+    return logger
+
+applog = _getrunlog()
 
 class AbstractLogger:
 
@@ -44,6 +57,30 @@ class LRLogger(AbstractLogger):
 
     def __init__(self, *args, **kwargs):
         super().__init__(['last_lr'])
+
+
+class GPULogger(AbstractLogger):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__([])
+    
+    @staticmethod
+    def getmem(d=None) -> float:
+        '''Returns reserved memory on device.
+
+        Args:
+            d (torch.device): A torch device.
+        
+        Returns:
+            float: Currently reserved memory on device.
+        '''
+        if d is not None and d.type == 'cpu':
+                return 0
+        a, b = torch.cuda.mem_get_info(d)
+        return (b-a) / (1024**2)
+    
+    def log(self, **logging_kwargs):
+        return {'gpumem': self.getmem()}
 
 
 class AccuracyLogger(AbstractLogger):
@@ -109,18 +146,27 @@ class LogCollator:
 
     def __init__(
         self,
-        runid:str,
+        runid:str, # TODO: We probably don't need this to be required.
         root:str,
-        # rank:str,
-        # local_rank:str,
+        rank:int,
+        local_rank:int,
         loggers:LoggerSequence,
         logfoldername:str='log',
+        stdout:bool=False,
     ):
         self.runid = runid
         self.loggers = loggers
         self.save_folder = os.path.join(root, logfoldername)
+        self.file_name = f"{runid}_{rank}_{local_rank}.jsonl"
+        self.rank = rank
+        self.local_rank = local_rank
+        self.stdout = stdout
         os.makedirs(self.save_folder, exist_ok=True)
-        self.file_path = os.path.join(self.save_folder, f"{runid}.jsonl")
+        self.file_path = os.path.join(self.save_folder, self.file_name)
+
+    @property
+    def _use_applog(self) -> bool:
+        return self.stdout and self.rank == 0 and self.local_rank == 0
 
     def get_entries(self, **logging_kwargs):
         def t2item(val):
@@ -141,20 +187,26 @@ class LogCollator:
             **self.get_entries(**logging_kwargs)
         }
         mode = 'a' if os.path.isfile(self.file_path) else 'w'
-        # print(log_entry)
+        if self._use_applog:
+            applog.debug(' '.join([f"{k}={v}" for k,v in log_entry.items() if k != 'time']))
         with open(self.file_path, mode) as log_file:
             log_file.write(json.dumps(log_entry))
             log_file.write('\n')
 
     @classmethod
-    def standard_logger(cls, runid:str, root:str, logfoldername:str='log'):
+    def standard_logger(
+        cls, runid:str, root:str, rank:int, local_rank:int,
+        stdout:bool, logfoldername:str='log'
+    ):
         loggers = [
             ProgressLogger(), DeltaTimeLogger(), LossLogger(), 
-            AccuracyLogger(1), AccuracyLogger(5), LRLogger()
+            AccuracyLogger(1), AccuracyLogger(5), LRLogger(),
+            GPULogger()
         ]
-        return cls(runid, root, loggers, logfoldername)
-
-
+        return cls(
+            runid, root, rank, local_rank, loggers, 
+            logfoldername, stdout
+        )
 
 
 # class SmoothedValue:

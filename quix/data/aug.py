@@ -214,4 +214,4 @@ def parse_train_augs(cfg:DataConfig, num_classes:Optional[int]=None) -> Tuple[Ca
 def parse_val_augs(cfg:DataConfig, num_classes:Optional[int]=None) -> Tuple[Callable, Callable]:
     val_img_size = cfg.val_size if cfg.val_size is not None else cfg.img_size
     sample_augs = v2.RandomResizedCrop(val_img_size, (1.0,1.0), antialias=True)
-    return sample_augs, default_collate
+    return sample_augs, DefaultCollateWrapper(Identity())
