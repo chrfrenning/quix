@@ -218,7 +218,9 @@ class AbstractRunner:
         raise NotImplementedError('Missing implementation of `forward_fn`.')
 
     def parse_checkpoint(self, model, optimizer, scheduler, scaler, model_ema) -> int:
+        model_ddp = None
         if self.distributed:
+            model_ddp = model
             model = model.module
 
         start_epoch = self.cfg.start_epoch
@@ -228,7 +230,10 @@ class AbstractRunner:
                 raise FileNotFoundError(f'Invalid checkpoint resume path {self.mod.resume}')
             checkpoint = torch.load(self.mod.resume, map_location='cpu')
             model.load_state_dict(checkpoint['model'])
+            if model_ddp is not None:
+                model_ddp.to(dtype=torch.get_default_dtype())
             model.to(dtype=torch.get_default_dtype())
+
             print('DTYPE:', torch.get_default_dtype())
             if not self.mod.onlyweights:
                 if not self.cfg.test_only:
