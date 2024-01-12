@@ -1,5 +1,8 @@
 from .run import Runner, AbstractRunner, single_node_launcher
-from .cfg import ModelConfig, DataConfig, OptimizerConfig, LogConfig, RunConfig
+from .cfg import (
+    ModelConfig, DataConfig, OptimizerConfig, LogConfig, RunConfig,
+    TMod, TLog, TDat, TOpt
+)
 from .proc import BatchProcessor
 from .log import (
     LogCollator, AbstractLogger, ProgressLogger, LossLogger, LRLogger, GPULogger,
