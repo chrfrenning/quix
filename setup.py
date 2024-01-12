@@ -5,5 +5,5 @@ setup(
     version='0.1.1',
     description='QUIck eXperiment',
     licence='GNUv3',
-    packages=['quix', 'quix.run', 'quix.cfg']
+    packages=['quix', 'quix.run', 'quix.cfg', 'quix.data']
 )
