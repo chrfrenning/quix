@@ -199,7 +199,7 @@ class OptimizerConfig(_BaseConfig):
     lr_min : float
         Learning rate scheduler minimum value.
     lr_init : float
-        Learning rate scheduler initial value.        
+        Learning rate scheduler initial value.
     '''
     optim:str = 'adamw'
     lr:float = 3e-3
@@ -219,7 +219,7 @@ class OptimizerConfig(_BaseConfig):
     lr_warmup_epochs:int = 5
     lr_min:float = 1e-5
     lr_init:float = 1e-6
-
+    
 
 class LogConfig(_BaseConfig):
     '''Configuration settings for logging.
@@ -296,6 +296,8 @@ class RunConfig(Generic[TMod,TDat,TOpt,TLog]):
         Local world size for DDP, inferred from environment variables.
     local_rank : int
         Local device rank for DDP, inferred from environment variables.
+    dtype : str
+        Set default dtype for script.
     '''
     mod:TMod = add_argument(no_parse=True)
     dat:TDat = add_argument(no_parse=True)
@@ -315,6 +317,7 @@ class RunConfig(Generic[TMod,TDat,TOpt,TLog]):
     rank:Optional[int] = _fromenv('RANK', int)
     local_world_size:Optional[int] = _fromenv('LOCAL_WORLD_SIZE', int)
     local_rank:Optional[int] = _fromenv('LOCAL_RANK', int)
+    dtype:str = 'float32'
 
     def __repr__(self):
         return _repr_helper(self)

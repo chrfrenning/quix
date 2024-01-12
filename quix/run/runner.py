@@ -61,6 +61,25 @@ def _getlogger():
     return runlog
 
 applog = _getlogger()
+_dtype_warned = False
+
+def parse_dtype(dtype_str):
+    global _dtype_warned
+    dtype_map = {
+        'float32': torch.float32,
+        'float': torch.float32,
+        'float64': torch.float64,
+        'double': torch.float64,
+        'float16': torch.float16,
+        'half': torch.float16,
+        'bfloat16': torch.bfloat16,
+    }
+
+    if dtype_str not in dtype_map and not _dtype_warned:
+        applog.warn(f'Invalid dtype: {dtype_str}, defaulting to float32.')
+        _dtype_warned = True
+    
+    return dtype_map.get(dtype_str.lower(), torch.float32)
 
 
 class AbstractRunner:
@@ -81,6 +100,7 @@ class AbstractRunner:
         self.input_ext = self.dat.input_ext
         self.target_ext = self.dat.target_ext
         self.world_size = self.rank = self.local_rank = self.local_world_size = None
+        torch.set_default_dtype(parse_dtype(self.cfg.dtype))
         distparams = [
             'world_size', 'rank', 'local_world_size', 'local_rank',
             'ddp_master_address', 'ddp_master_port'
@@ -326,7 +346,7 @@ class AbstractRunner:
             raise FileNotFoundError(f'Invalid checkpoint resume path {checkpoint_path}')
         checkpoint = torch.load(checkpoint_path, map_location='cpu')
         model.load_state_dict(checkpoint['model'])
-        return model
+        return model.to(dtype=torch.get_default_dtype())
     
     @staticmethod
     def _fetch_state_dict(key, **kwargs):
