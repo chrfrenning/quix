@@ -206,18 +206,19 @@ class AbstractRunner:
                 raise FileNotFoundError(f'Invalid checkpoint resume path {self.mod.resume}')
             checkpoint = torch.load(self.mod.resume, map_location='cpu')
             model.load_state_dict(checkpoint['model'])
-            if not self.cfg.test_only:
-                optimizer.load_state_dict(checkpoint['optimizer'])
-                if scheduler:
-                    scheduler.load_state_dict(checkpoint['scheduler'])
+            if not self.mod.onlyweights:
+                if not self.cfg.test_only:
+                    optimizer.load_state_dict(checkpoint['optimizer'])
+                    if scheduler:
+                        scheduler.load_state_dict(checkpoint['scheduler'])
 
-            start_epoch = checkpoint['epoch']
+                start_epoch = checkpoint['epoch']
 
-            if model_ema:
-                model_ema.load_state_dict(checkpoint['model_ema'])
+                if model_ema: # TODO: ?
+                    model_ema.load_state_dict(checkpoint['model_ema'])
 
-            if scaler:
-                scaler.load_state_dict(checkpoint['scaler'])
+                if scaler:
+                    scaler.load_state_dict(checkpoint['scaler'])
 
         # Initialize checkpoint directory
         os.makedirs(self.checkpointdir, exist_ok=True)

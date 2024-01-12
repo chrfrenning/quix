@@ -55,6 +55,8 @@ class ModelConfig(_BaseConfig):
         Pretrained model weights, passed to torchvision zoo.
     resume : Optional[str]
         Path of weights to resume training from.
+    onlyweights : bool
+        Flag to only load model weights from checkpoint.
     sync_bn : bool
         Sync Batch Norm for DDP.
     model_ema : bool 
@@ -70,6 +72,7 @@ class ModelConfig(_BaseConfig):
     use_torch_zoo: bool = True
     pretrained_weights: Optional[str] = None
     resume: Optional[str] = None
+    onlyweights: bool = False
     sync_bn: bool = False
     model_ema:bool = False
     model_ema_steps:int = 32
