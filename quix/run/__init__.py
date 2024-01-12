@@ -66,4 +66,4 @@ Author
 ------
 Marius Aasan <mariuaas@ifi.uio.no>
 '''
-from .runner import Runner, single_node_launcher
+from .runner import Runner, AbstractRunner, single_node_launcher
