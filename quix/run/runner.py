@@ -40,9 +40,11 @@ from ..ema import ExponentialMovingAverage
 - Possibly wrap some logic in hidden calls to simplify logic
     - In particular: Wrap all stuff to do with rank and local_rank to abstract away tedious stuff.
 - Fix RASampler
-- Fix EMA
+- Fix EMA -> General Model Averaging
 - Fix Logger
+- Add AutoAugment
 - Fix AugParsing
+- Wrapper for Opt-Sched
 '''
 
 TensorSequence = Union[Tensor, Sequence[Tensor]]
@@ -367,6 +369,7 @@ class AbstractRunner:
                 torch.save(checkpoint, savepath_model)
 
                 if self.log.rolling_checkpoints > 0:
+                    # TODO: Verify that this is what we want
                     pattern = rf'{self.log.custom_runid}_\d{{12}}.pth'
                     all_cps = sorted([f for f in os.listdir(self.checkpointdir) if re.match(pattern, f)])
                     for old_cp in all_cps[:-self.log.rolling_checkpoints]:

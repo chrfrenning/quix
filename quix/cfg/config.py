@@ -127,7 +127,7 @@ class DataConfig(_BaseConfig):
     ra_sampler : bool
         Use repeated augmentation sampler.
     ra_reps : int
-        Number of repeated augmentations for RASampler.        
+        Number of repeated augmentations for RASampler.   
     '''
     data_path:str
     dataset:str = 'IN1k'
@@ -266,7 +266,7 @@ class RunConfig(Generic[TMod,TDat,TOpt,TLog]):
     log : LogConfig
         Logging configuration parameters.
     cfgfile : str
-        Path to config file in JSON/YAML format.
+        Path to config file(s) in JSON/YAML/TOML format.
     batch_size : int
         Batch size for training. 
     epochs : int
