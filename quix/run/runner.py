@@ -257,7 +257,7 @@ class AbstractRunner:
     
     def parse_logger(self) -> Optional[LogCollator]:
         raise NotImplementedError('Missing implementation of `parse_logger`.')
-        
+            
     def parse_run(self):
         self.infomsg('Parsing augmentations...')
         augs, collate_fns = self.parse_augmentations()
@@ -265,6 +265,9 @@ class AbstractRunner:
         trainloader, valloader, traindata, valdata = self.parse_data(augs, collate_fns)
         self.infomsg('Parsing model...')
         model = self.parse_model()
+        model.to(self.cfg.device)
+        if self.mod.sync_bn and self.distributed:
+            model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
         self.infomsg('Parsing loss...')
         loss_fn = self.parse_loss()
         self.infomsg('Parsing parameter groups...')
@@ -661,9 +664,6 @@ class Runner(AbstractRunner):
     
     def parse_model(self):
         model = tv.models.get_model(self.mod.model, weights=self.mod.pretrained_weights, num_classes=self.num_classes)
-        model.to(self.cfg.device)
-        if self.mod.sync_bn and self.distributed:
-            model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
         return model
     
     def parse_loss(self):
