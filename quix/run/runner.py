@@ -580,10 +580,12 @@ class Runner(AbstractRunner):
         self.num_classes = self.cfg.dat.num_classes
         self.input_ext = self.dat.input_ext
         self.target_ext = self.dat.target_ext
-        if self.dat.dataset == 'IN1k':
-            self.num_classes = 1000
-            self.input_ext = ['jpg']
-            self.target_ext = ['cls']
+        # Yalla yalla
+        if self.input_ext is None and self.target_ext is None:
+            if self.dat.dataset == 'IN1k':
+                self.num_classes = 1000
+                self.input_ext = ['jpg']
+                self.target_ext = ['cls']
 
 
     @staticmethod
