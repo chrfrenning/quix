@@ -228,7 +228,8 @@ class AbstractRunner:
                 raise FileNotFoundError(f'Invalid checkpoint resume path {self.mod.resume}')
             checkpoint = torch.load(self.mod.resume, map_location='cpu')
             model.load_state_dict(checkpoint['model'])
-            model = model.to(dtype=torch.get_default_dtype())
+            model.to(dtype=torch.get_default_dtype())
+            print('DTYPE:', torch.get_default_dtype())
             if not self.mod.onlyweights:
                 if not self.cfg.test_only:
                     optimizer.load_state_dict(checkpoint['optimizer'])
