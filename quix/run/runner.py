@@ -326,6 +326,13 @@ class AbstractRunner:
         checkpoint = torch.load(checkpoint_path, map_location='cpu')
         model.load_state_dict(checkpoint['model'])
         return model
+    
+    @staticmethod
+    def _fetch_state_dict(key, **kwargs):
+        cls_ = kwargs.get('optimizer', None)
+        if cls_ is not None and hasattr(cls_, 'state_dict'):
+            return cls_.state_dict()
+        return None
 
     def checkpoint(self, epoch, **run_kwargs):
         '''Method to handle checkpointing.
@@ -346,7 +353,7 @@ class AbstractRunner:
             Current epoch of run.
         run_kwargs : Dict[str, Any]
             The current run arguments. 
-        '''
+        '''        
         model = run_kwargs['model']
         
         if self.distributed:
@@ -355,19 +362,19 @@ class AbstractRunner:
         if self.log.savedir:
             checkpoint = {
                 'epoch': epoch,
-                'model': model,
-                'optimizer': run_kwargs.get('optimizer', None),
+                'model': model.state_dict(),
+                'optimizer': self._fetch_state_dict('optimizer', **run_kwargs),
                 'cfg': self.cfg.to_dict(),
             }
 
             if self.opt.lr_scheduler:
-                checkpoint['scheduler'] = run_kwargs.get('scheduler', None)
+                checkpoint['scheduler'] = self._fetch_state_dict('scheduler', **run_kwargs)
 
             if self.mod.model_ema:
-                checkpoint['model_ema'] = run_kwargs.get('model_ema', None)
+                checkpoint['model_ema'] = self._fetch_state_dict('model_ema', **run_kwargs)
 
             if self.opt.amp:
-                checkpoint['scaler'] = run_kwargs.get('scaler', None)
+                checkpoint['scaler'] = self._fetch_state_dict('scaler', **run_kwargs)
 
             if (self.distributed and self.rank == 0 and self.local_rank == 0) or not self.distributed:
                 savepath_model = os.path.join(self.checkpointdir, f'{self.log.custom_runid}_{epoch:012d}.pth')
