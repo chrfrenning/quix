@@ -206,21 +206,19 @@ class AbstractRunner:
     
     def send_to_device(self, data):
         if data is not None:
-            return tuple(map(lambda x: x.to(self.cfg.device), data))
+            return tuple(map(lambda x: x.to(self.cfg.device, dtype=torch.get_default_dtype()), data))
         return data
     
     def _dataunpacker(self, data):
         inputs, targets = self.unpack_data(data)
         return self.send_to_device(inputs), self.send_to_device(targets)
-
+    
     @staticmethod
     def forward_fn(inputs, targets, model, loss_fn) -> Tuple[Tensor, TensorSequence]:
         raise NotImplementedError('Missing implementation of `forward_fn`.')
 
     def parse_checkpoint(self, model, optimizer, scheduler, scaler, model_ema) -> int:
-        model_ddp = None
         if self.distributed:
-            model_ddp = model
             model = model.module
 
         start_epoch = self.cfg.start_epoch
@@ -230,11 +228,8 @@ class AbstractRunner:
                 raise FileNotFoundError(f'Invalid checkpoint resume path {self.mod.resume}')
             checkpoint = torch.load(self.mod.resume, map_location='cpu')
             model.load_state_dict(checkpoint['model'])
-            if model_ddp is not None:
-                model_ddp.to(dtype=torch.get_default_dtype())
             model.to(dtype=torch.get_default_dtype())
 
-            print('DTYPE:', torch.get_default_dtype())
             if not self.mod.onlyweights:
                 if not self.cfg.test_only:
                     optimizer.load_state_dict(checkpoint['optimizer'])
