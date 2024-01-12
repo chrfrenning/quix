@@ -185,7 +185,9 @@ class AbstractRunner:
         return inputs, targets
     
     def send_to_device(self, data):
-        return tuple(map(lambda x: x.to(self.cfg.device), data))
+        if data is not None:
+            return tuple(map(lambda x: x.to(self.cfg.device), data))
+        return data
     
     def _dataunpacker(self, data):
         inputs, targets = self.unpack_data(data)
