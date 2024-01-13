@@ -107,6 +107,12 @@ class DataConfig(_BaseConfig):
         Image size used for training.
     val_size : Optional[int]
         Set explicit image size for validation.
+    rgb_mean : Tuple[float,float,float]
+        RGB mean for normalization.
+    rgb_std : Tuple[float,float,float]
+        RGB standard deviation for normalization.
+    use_rgb_norm : bool
+        Use RGB normalization with provided parameters.
     rrc_scale : tuple[float, float] 
         RandomResizeCrop scale.
     rrc_ratio : tuple[float, float] 
@@ -143,6 +149,9 @@ class DataConfig(_BaseConfig):
     num_classes:Optional[int] = None
     img_size:int = 224
     val_size:Optional[int] = None
+    rgb_mean:Tuple[float,float,float] = add_argument(default=(0.485, 0.456, 0.406), nargs=3)
+    rgb_std:Tuple[float,float,float] = add_argument(default=(0.229, 0.224, 0.225), nargs=3)
+    use_rgb_norm:bool = True
     rrc_scale:Tuple[float,float] = add_argument(default=(.08, 1.0), nargs=2)
     rrc_ratio:Tuple[float,float] = add_argument(default=(.75, 4/3), nargs=2)
     intp_modes:str = add_argument(

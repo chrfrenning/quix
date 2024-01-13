@@ -187,9 +187,10 @@ def parse_train_augs(cfg:DataConfig, num_classes:Optional[int]=None) -> Tuple[Ca
 
     # Final augmentations
     addaug = [
-        v2.ColorJitter(0.3, 0.3) if cfg.jitter else identity,   # Only brightness and contrast
-        v2.RandomHorizontalFlip() if cfg.hflip else identity,   # On by default
-        v2.RandomVerticalFlip() if cfg.vflip else identity,     # Off by default
+        v2.ColorJitter(0.3, 0.3) if cfg.jitter else identity,                               # Only brightness and contrast
+        v2.RandomHorizontalFlip() if cfg.hflip else identity,                               # On by default
+        v2.RandomVerticalFlip() if cfg.vflip else identity,                                 # Off by default
+        v2.Normalize(mean=cfg.rgb_mean, std=cfg.rgb_std) if cfg.use_rgb_norm else identity  # On by default,
     ]
 
     # Mixup / Cutmix (50 - 50 chance)
@@ -213,5 +214,9 @@ def parse_train_augs(cfg:DataConfig, num_classes:Optional[int]=None) -> Tuple[Ca
 
 def parse_val_augs(cfg:DataConfig, num_classes:Optional[int]=None) -> Tuple[Callable, Callable]:
     val_img_size = cfg.val_size if cfg.val_size is not None else cfg.img_size
-    sample_augs = v2.RandomResizedCrop(val_img_size, (1.0,1.0), antialias=True)
-    return sample_augs, DefaultCollateWrapper(Identity())
+    identity = Identity()
+    sample_augs = v2.Compose([
+        v2.RandomResizedCrop(val_img_size, (1.0,1.0), antialias=True),
+        v2.Normalize(mean=cfg.rgb_mean, std=cfg.rgb_std) if cfg.use_rgb_norm else identity
+    ])
+    return sample_augs, DefaultCollateWrapper(identity)
