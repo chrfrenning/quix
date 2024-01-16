@@ -11,6 +11,7 @@ setup(
         'numpydoc >= 1.6.0',
         'PyYaml >= 6.0',
         'torch >= 2.1.0',
-        'torchvision >= 0.16.0'
+        'torchvision >= 0.16.0',
+        'scipy >= 1.10.1'
     ]
 )
