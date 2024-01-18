@@ -1,0 +1,15 @@
+model="resnet18"
+custom_runid="torchrun"
+project="testproject"
+dataset="Caltech256"
+num_classes=257
+epochs=50
+aug3=true
+input_ext=["jpg"]
+target_ext=["cls"]
+data_path="/work2/litdata/"
+batch_size=512
+lr_init=3e-5
+zro=false
+model_ema=true
+stdout=true
