@@ -7,9 +7,8 @@
 ## Current TODOs
 
 - Check and fix project TODOs
-- Fix stdout / logging
-- Batch size handling 
-- More rigorous testing using `torchrun`
+- Fix issues with setting default dtypes.
+- Multinode testing w. slurn and `torchrun`
 
 ## the TLDR;
 
