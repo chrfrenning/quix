@@ -529,7 +529,7 @@ class AbstractRunner:
    
     def run(self):
         run_kwargs = self.parse_run()
-        logger = run_kwargs.get('logger', None)
+        logger = run_kwargs['processor']._logger
         start_epoch = run_kwargs.pop('start_epoch', 0)
         if self.cfg.test_only: # TODO: Make log_staus a context manager
             self.log_status(logger, STATUS='TEST_START')
