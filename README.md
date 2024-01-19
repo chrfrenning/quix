@@ -5,7 +5,9 @@
 **quix** is a PyTorch framework for streamlining experiment design for ML tasks. 
 
 ## Installation
+
 https: `pip install git+https://github.uio.no/xpt/quix.git`
+
 ssh: `pip install git+ssh://git@github.uio.no/xpt/quix.git`
 
 ## Current TODOs
