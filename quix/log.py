@@ -186,7 +186,7 @@ class LogCollator:
         }
 
     def __call__(self, **logging_kwargs):
-        timestamp = logging_kwargs['time']
+        timestamp = logging_kwargs.get('time', time.time())
         log_entry = {
             'time': timestamp, 
             **self.get_entries(**logging_kwargs)

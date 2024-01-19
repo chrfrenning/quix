@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name = 'quix',
-    version = '0.1.7',
+    version = '0.1.8',
     description = 'QUIck eXperiment',
     licence = 'GNUv3',
     packages = ['quix', 'quix.run', 'quix.cfg', 'quix.data'],
