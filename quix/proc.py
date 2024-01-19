@@ -135,6 +135,7 @@ class BatchProcessor(_AbstractBatchProcessor):
         gradient_clipping:Optional[float]=None,
         logger:Optional[LogCollator]=None,
         consistent_batch_size:bool=True,
+        max_step_skipped:int=25,
     ):
         '''Initializes the BatchProcessor with the specified parameters.
 
@@ -159,10 +160,16 @@ class BatchProcessor(_AbstractBatchProcessor):
         self.average_steps = average_steps
         self.average_warmup_epochs = average_warmup_epochs
         self.consistent_batch_size = consistent_batch_size
+        self.max_step_skipped = max_step_skipped
         self._acc_iteration = 0
         self._avg_update = average_steps * accumulation_steps
         self._avg_iteration = 0
         self._skip_averaging = self.average_steps > 0
+        self._acc_skipped = 0
+
+    @property
+    def cancel_run(self):
+        return self._acc_skipped > self.max_step_skipped
 
     @staticmethod
     def _opt_params(optimizer:Optimizer):
@@ -342,8 +349,8 @@ class BatchProcessor(_AbstractBatchProcessor):
         **logging_kwargs
             Additional keyword arguments for logging.
         '''
-        step_skipped = training
-        if training:
+        step_skipped = torch.any(loss.isnan())
+        if training and not step_skipped:
             with context():
                 self.backward(loss)
                 self._acc_iteration += 1
@@ -363,6 +370,7 @@ class BatchProcessor(_AbstractBatchProcessor):
                             averaged_model.n_averaged.fill_(0)
                     self._avg_iteration = 0
 
+        self._acc_skipped = (self._acc_skipped + step_skipped) * step_skipped
         if self._logger:
             last_lr = None
             if scheduler is not None:

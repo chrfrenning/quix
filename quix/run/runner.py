@@ -37,14 +37,15 @@ from ..ema import ExponentialMovingAverage
 
 '''Overall TODO:
 
+- PRIORITY: Add support for restarts and elastic runs!
 - Possibly wrap some logic in hidden calls to simplify logic
     - In particular: Wrap all stuff to do with rank and local_rank to abstract away tedious stuff.
 - Fix RASampler
 - Fix EMA -> General Model Averaging
-- Fix Logger
 - Add AutoAugment
 - Fix AugParsing
 - Wrapper for Opt-Sched
+- Context manager for log_status
 '''
 
 TensorSequence = Union[Tensor, Sequence[Tensor]]
@@ -198,6 +199,10 @@ class AbstractRunner:
         else:
             applog.warning(msg)
 
+    def log_status(self, logger:Optional[LogCollator], **kwargs):
+        if logger is not None:
+            logger(**kwargs)
+
     def unpack_data(self, data):
         n_inputs = len(self.input_ext)
         inputs = data[:n_inputs]
@@ -318,10 +323,12 @@ class AbstractRunner:
             self.mod.model_ema_warmup_epochs,
             self.opt.gradclip,
             logger,
-            self.opt.consistent_batch_size
+            self.opt.consistent_batch_size,
+            self.cfg.max_step_skipped
         )
         amp_context = autocast if self.cfg.opt.amp else nullcontext
         self.infomsg('Finished parsing!')
+        self.log_status(logger, STATUS='RUN_PARSED', cfg=self.cfg.to_json())
         return {
             'trainloader':trainloader,
             'valloader':valloader,
@@ -505,18 +512,36 @@ class AbstractRunner:
                 with processor(**current_kwargs) as proc:
                     with fwd_context():
                         proc.loss, proc.outputs = self.forward_fn(inputs, targets, model, loss_fn)
+
+                if processor.cancel_run:
+                    if self.distributed:
+                        distparams = (
+                            self.world_size, self.rank, 
+                            self.local_world_size, self.local_rank
+                        )
+                        diststr = ','.join([f'{p=}' for p in distparams])
+                    else:
+                        diststr = 'non-distributed'
+
+                    self.log_status(processor._logger, STATUS=f'RUN_CANCEL:{diststr.upper()}')
+                    raise ValueError(f'Run failure @ {diststr}. Cancelling...')
         return
    
     def run(self):
         run_kwargs = self.parse_run()
+        logger = run_kwargs.get('logger', None)
         start_epoch = run_kwargs.pop('start_epoch', 0)
-        if self.cfg.test_only:
+        if self.cfg.test_only: # TODO: Make log_staus a context manager
+            self.log_status(logger, STATUS='TEST_START')
             self.process_epoch(-1, **run_kwargs, training=False)
+            self.log_status(logger, STATUS='TEST_END')
             return
+        self.log_status(logger, STATUS='TRAIN_START', epoch='start_epoch')
         for epoch in range(start_epoch, self.cfg.epochs):
             self.process_epoch(epoch, **run_kwargs, training=True)
             self.process_epoch(epoch, **run_kwargs, training=False)
             self.checkpoint(epoch, **run_kwargs)
+        self.log_status(logger, STATUS='TRAIN_END', epoch=self.cfg.epochs)
         return
     
     @classmethod

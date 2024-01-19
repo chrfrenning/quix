@@ -305,6 +305,8 @@ class RunConfig(Generic[TMod,TDat,TOpt,TLog]):
         Local world size for DDP, inferred from environment variables.
     local_rank : int
         Local device rank for DDP, inferred from environment variables.
+    max_step_skipped : int
+        Maximum number of allowable skipped steps for a process. 
     dtype : str
         Set default dtype for script.
     '''
@@ -326,6 +328,7 @@ class RunConfig(Generic[TMod,TDat,TOpt,TLog]):
     rank:Optional[int] = _fromenv('RANK', int)
     local_world_size:Optional[int] = _fromenv('LOCAL_WORLD_SIZE', int)
     local_rank:Optional[int] = _fromenv('LOCAL_RANK', int)
+    max_step_skipped:int = 25
     dtype:str = 'float32'
 
     def __repr__(self):
