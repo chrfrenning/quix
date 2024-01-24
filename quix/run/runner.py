@@ -696,11 +696,21 @@ class Runner(AbstractRunner):
         valdata = valdata.map(val_aug)
 
         # TODO: Add support for RASampler
-        sampler = DistributedSampler if self.distributed else SequentialSampler
+        if self.distributed:
+            trainsampler = DistributedSampler(
+                traindata, shuffle=False, drop_last=self.dat.loader_drop_last,
+            )
+            valsampler = DistributedSampler(
+                traindata, shuffle=False,
+            )
+        else:
+            trainsampler = SequentialSampler(traindata)
+            valsampler = SequentialSampler(valdata)
+
         trainloader = DataLoader(
             traindata, 
             self.cfg.batch_size, 
-            sampler=sampler(traindata),
+            sampler=trainsampler,
             num_workers=self.dat.workers,
             persistent_workers=True,
             prefetch_factor=self.dat.prefetch,
@@ -711,7 +721,7 @@ class Runner(AbstractRunner):
         valloader = DataLoader(
             valdata, 
             self.cfg.batch_size,
-            sampler=sampler(valdata),
+            sampler=valsampler,
             num_workers=self.dat.workers,
             persistent_workers=True,
             prefetch_factor=self.dat.prefetch,
