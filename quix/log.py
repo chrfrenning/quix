@@ -94,7 +94,7 @@ class AccuracyLogger(AbstractLogger):
         self.top_k = top_k
 
     def unpack(self, name, dict):
-        val = dict.get(name, [])
+        val = dict.get(name, None)
         if isinstance(val, tuple) or isinstance(val, list):
             if len(val) != 1:
                 raise ValueError(
@@ -106,7 +106,9 @@ class AccuracyLogger(AbstractLogger):
 
     def log(self, **logging_kwargs) -> StrDict:
         outputs = self.unpack('outputs', logging_kwargs)
-        targets = self.unpack('targets', logging_kwargs)       
+        targets = self.unpack('targets', logging_kwargs)
+        if outputs is None and targets is None:
+            return {}
         if not torch.is_tensor(outputs) or not torch.is_tensor(targets):
             raise ValueError(
                 'AccuracyLogger expects single output and target tensor. '
