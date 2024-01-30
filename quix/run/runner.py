@@ -211,7 +211,13 @@ class AbstractRunner:
     
     def send_to_device(self, data):
         if data is not None:
-            return tuple(map(lambda x: x.to(self.cfg.device, dtype=torch.get_default_dtype()), data))
+            return tuple(map(
+                lambda x: x.to(
+                    torch.cuda.current_device(), 
+                    dtype=torch.get_default_dtype()
+                ), 
+                data
+            ))
         return data
     
     def _dataunpacker(self, data):
