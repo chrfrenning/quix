@@ -214,7 +214,7 @@ class AbstractRunner:
         if data is not None:
             return tuple(map(
                 lambda x: x.to(
-                    device=self.cfg.device,
+                    device=f'cuda:{self.local_rank}',
                     dtype=torch.get_default_dtype()
                 ), 
                 data
