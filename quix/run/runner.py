@@ -117,8 +117,9 @@ class AbstractRunner:
             self.distributed = True
             world_size, rank, local_world_size, local_rank, _, _  = [getattr(cfg, k) for k in distparams]
             torch.cuda.set_device(local_rank)
+            current_device = torch.cuda.current_device()
             if self.log.stdout:
-                msg = f'Distributed init: {rank=}, {local_rank=}, {world_size=}'
+                msg = f'Distributed init: {rank=}, {local_rank=}, {world_size=} {current_device=}'
                 self.infomsg(msg)
             
             self.world_size, self.rank, self.local_rank, self.local_world_size = (
