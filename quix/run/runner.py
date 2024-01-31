@@ -158,7 +158,10 @@ class AbstractRunner:
     
     @property
     def local_device(self):
-        return f'cuda:{self.local_rank}' if self.cfg.device == 'cuda' else 'cpu'
+        return (
+            f'cuda:{self.local_rank}' 
+            if self.local_rank is not None else 'cpu'
+        )
     
     @staticmethod
     def combined_context(*context_managers):
