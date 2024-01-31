@@ -252,7 +252,7 @@ class AbstractRunner:
                     if scheduler:
                         scheduler.load_state_dict(checkpoint['scheduler'])
 
-                start_epoch = checkpoint['epoch']
+                start_epoch = checkpoint['epoch'] + 1 # Increment by one from checkpoint
 
                 if model_ema: # TODO: ?
                     model_ema.load_state_dict(checkpoint['model_ema'])
@@ -328,6 +328,7 @@ class AbstractRunner:
         )
         self.infomsg('Parsing logger...')
         logger = self.parse_logger()
+        traindata.set_shuffle_epoch(start_epoch)
         processor = BatchProcessor(
             self.opt.accumulation_steps,
             self.mod.model_ema_steps,
