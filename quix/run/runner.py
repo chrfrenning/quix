@@ -720,7 +720,7 @@ class Runner(AbstractRunner):
                 traindata, shuffle=False, drop_last=self.dat.loader_drop_last,
             )
             valsampler = DistributedSampler(
-                traindata, shuffle=False,
+                valdata, shuffle=False,
             )
         else:
             trainsampler = SequentialSampler(traindata)
