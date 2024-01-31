@@ -308,7 +308,7 @@ class AbstractRunner:
         trainloader, valloader, traindata, valdata = self.parse_data(augs, collate_fns)
         self.infomsg('Parsing model...')
         model = self.parse_model()
-        model.to(self.cfg.device)
+        model.to(self.local_device)
         if self.mod.sync_bn and self.distributed:
             model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
         self.infomsg('Parsing loss...')
@@ -846,7 +846,7 @@ class Runner(AbstractRunner):
             adjust = self.world_size * self.cfg.batch_size * self.cfg.mod.model_ema_steps / self.cfg.epochs
             alpha = 1.0 - self.cfg.mod.model_ema_decay
             alpha = min(1.0, alpha*adjust)
-            model_ema = ExponentialMovingAverage(model, decay=1-alpha, device=self.cfg.device)
+            model_ema = ExponentialMovingAverage(model, decay=1-alpha, device=self.local_device)
 
         return model_ema
     
