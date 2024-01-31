@@ -220,10 +220,7 @@ class AbstractRunner:
     def send_to_device(self, data):
         if data is not None:
             return tuple(map(
-                lambda x: x.to(
-                    device=self.local_device,
-                    dtype=torch.get_default_dtype()
-                ), 
+                lambda x: x.to(device=self.local_device), 
                 data
             ))
         return data
