@@ -304,6 +304,11 @@ class QuixDataset(Dataset):
         
         # Initialize transforms
         self.transforms = []
+
+        # Set epoch counter and seed
+        self.epoch = 0
+        self.seed = 0
+
     
     @staticmethod
     def _shard_offset_key(x):
@@ -348,10 +353,12 @@ class QuixDataset(Dataset):
         ...     for batch in dataloader:
         ...         # Processing code
         """
+        g = torch.Generator()
+        g.manual_seed(self.seed + self.epoch)
         shard_offsets = self.shard_bincount.cumsum(-1) - self.shard_bincount
-        shard_order = torch.randperm(len(self.shard_bincount))
+        shard_order = torch.randperm(len(self.shard_bincount), generator=g)
         new_order = torch.cat([
-            torch.randperm(self.shard_bincount[i].item()) + shard_offsets[i] #type:ignore
+            torch.randperm(self.shard_bincount[i].item(), generator=g) + shard_offsets[i] #type:ignore
             for i in shard_order
         ])
         try:
@@ -359,6 +366,27 @@ class QuixDataset(Dataset):
             yield
         finally:
             self.offset_order[:] = torch.arange(len(self.offset_index))
+            self.epoch += 1
+
+    def set_shuffle_epoch(self, epoch):
+        '''Method to set the current epoch for shuffling using shufflecontext.
+
+        Parameters
+        ----------
+        epoch : int
+            Epoch to set for deterministic pseudorandom shuffling.
+        '''
+        self.epoch = epoch
+
+    def set_shuffle_seed(self, seed):
+        '''Method to set the seed for shuffling using shufflecontext.
+
+        Parameters
+        ----------
+        seed : int
+            Seed to set for deterministic pseudorandom shuffling.
+        '''
+        self.seed = seed
                         
     def __len__(self):
         return self.mod_length if self.mod_length > 0 else len(self.offset_index)

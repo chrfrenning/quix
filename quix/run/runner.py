@@ -156,6 +156,10 @@ class AbstractRunner:
     def checkpointdir(self):
         return os.path.join(self.savedir, 'checkpoint')
     
+    @property
+    def local_device(self):
+        return f'cuda:{self.local_rank}' if self.cfg.device == 'cuda' else 'cpu'
+    
     @staticmethod
     def combined_context(*context_managers):
         '''This method combines a variable no. context managers.
@@ -209,12 +213,12 @@ class AbstractRunner:
         inputs = data[:n_inputs]
         targets = data[n_inputs:]
         return inputs, targets
-    
+        
     def send_to_device(self, data):
         if data is not None:
             return tuple(map(
                 lambda x: x.to(
-                    device=f'cuda:{self.local_rank}',
+                    device=self.local_device,
                     dtype=torch.get_default_dtype()
                 ), 
                 data
@@ -682,6 +686,9 @@ class Runner(AbstractRunner):
             override_extensions=use_extensions
         )
 
+        # Set shuffle seed
+        traindata.set_shuffle_seed(self.dat.shuffle_seed)
+
         # Map to correct tv_types if applicable
         if traindata.supports_tv_tensor():
             from torchvision import tv_tensors
@@ -689,11 +696,14 @@ class Runner(AbstractRunner):
 
             # Populate dict
             tvt_dct = {
-                'image': v2.Compose([v2.ToImage(), v2.ToDtype(torch.float32, scale=True)]),
+                'image': v2.Compose([
+                    v2.ToImage(), 
+                    v2.ToDtype(torch.get_default_dtype(), scale=True)
+                ]),
                 'mask': tv_tensors.Mask,
                 'bbox': tv_tensors.BoundingBoxes,
                 'other': nn.Identity()
-            }        
+            }
             tv_types = [tvt_dct[d._default_tv] for d in traindata.decoders]
             traindata = traindata.map_tuple(*tv_types)
             valdata = valdata.map_tuple(*tv_types)

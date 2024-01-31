@@ -75,7 +75,7 @@ class ModelConfig(_BaseConfig):
     onlyweights: bool = False
     sync_bn: bool = False
     model_ema:bool = False
-    model_ema_steps:int = 32
+    model_ema_steps:int = 8
     model_ema_decay:float = 0.9998
     model_ema_warmup_epochs:int = 5
 
@@ -133,10 +133,12 @@ class DataConfig(_BaseConfig):
         CutMix alpha.
     mixup_alpha : float
         MixUp alpha.
+    shuffle_seed : int
+        Seed for QuixDataset shuffling.
     ra_sampler : bool
         Use repeated augmentation sampler.
     ra_reps : int
-        Number of repeated augmentations for RASampler.   
+        Number of repeated augmentations for RASampler. 
     '''
     data_path:str
     dataset:str = 'IN1k'
@@ -164,6 +166,7 @@ class DataConfig(_BaseConfig):
     randaug:str = add_argument(default='medium', choices=['none', 'light', 'medium', 'strong'])
     cutmix_alpha:float = 0.0
     mixup_alpha:float = 0.0
+    shuffle_seed:int = 42
     ra_sampler:bool = False
     ra_reps:int = 2
 
