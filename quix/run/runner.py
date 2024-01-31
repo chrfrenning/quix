@@ -338,9 +338,10 @@ class AbstractRunner:
             self.opt.consistent_batch_size,
             self.cfg.max_step_skipped
         )
-        amp_context = autocast if self.cfg.opt.amp else nullcontext
+        amp_context = autocast if self.cfg.opt.amp else nullcontext # TODO: Unused
         self.infomsg('Finished parsing!')
         self.log_status(logger, STATUS='RUN_PARSED', cfg=self.cfg.to_json())
+        proc_ctx = torch.autograd.detect_anomaly if self.cfg.detect_anomaly else nullcontext #type: ignore
         return {
             'trainloader':trainloader,
             'valloader':valloader,
@@ -354,7 +355,7 @@ class AbstractRunner:
             'start_epoch':start_epoch,
             'train_epoch_context': traindata.shufflecontext if self.dat.shuffle_train else nullcontext,
             'val_epoch_context': nullcontext,
-            'train_proc_context': nullcontext,
+            'train_proc_context': proc_ctx,
             'val_proc_context': nullcontext,
             'train_fwd_context': amp_context,
             'val_fwd_context': self.combined_context(amp_context, torch.no_grad),

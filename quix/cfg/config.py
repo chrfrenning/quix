@@ -309,7 +309,9 @@ class RunConfig(Generic[TMod,TDat,TOpt,TLog]):
     local_rank : int
         Local device rank for DDP, inferred from environment variables.
     max_step_skipped : int
-        Maximum number of allowable skipped steps for a process. 
+        Maximum number of allowable skipped steps for a process.
+    detect_anomaly : bool
+        Set anomaly detection, for debugging.
     dtype : str
         Set default dtype for script.
     '''
@@ -332,6 +334,7 @@ class RunConfig(Generic[TMod,TDat,TOpt,TLog]):
     local_world_size:Optional[int] = _fromenv('LOCAL_WORLD_SIZE', int)
     local_rank:Optional[int] = _fromenv('LOCAL_RANK', int)
     max_step_skipped:int = 25
+    detect_anomaly:bool = False
     dtype:str = 'float32'
 
     def __repr__(self):
