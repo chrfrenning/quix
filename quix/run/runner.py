@@ -13,6 +13,7 @@ import logging
 import errno
 
 from torch import Tensor
+from numbers import Number
 from contextlib import nullcontext, contextmanager, ExitStack
 from torch.utils.data import DataLoader, default_collate, SequentialSampler
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -46,6 +47,8 @@ from ..ema import ExponentialMovingAverage
 - Fix AugParsing
 - Wrapper for Opt-Sched
 - Context manager for log_status
+- Silly to have the check for input and target ext only if both are missing.
+- Just maybe silly to have IN1k defaults at all? Remove?
 '''
 
 TensorSequence = Union[Tensor, Sequence[Tensor]]
@@ -230,7 +233,7 @@ class AbstractRunner:
         return self.send_to_device(inputs), self.send_to_device(targets)
     
     @staticmethod
-    def forward_fn(inputs, targets, model, loss_fn) -> Tuple[Tensor, TensorSequence]:
+    def forward_fn(inputs, targets, model, loss_fn) -> Dict[str, Any]:
         raise NotImplementedError('Missing implementation of `forward_fn`.')
 
     def parse_checkpoint(self, model, optimizer, scheduler, scaler, model_ema) -> int:
@@ -524,7 +527,10 @@ class AbstractRunner:
                 }
                 with processor(**current_kwargs) as proc:
                     with fwd_context():
-                        proc.loss, proc.outputs = self.forward_fn(inputs, targets, model, loss_fn)
+                        results = self.forward_fn(inputs, targets, model, loss_fn)
+                        proc.outputs = results.pop('outputs')
+                        proc.loss = results.pop('loss')
+                        proc.logging_kwargs = results
 
                 if processor.cancel_run:
                     if self.distributed:
@@ -649,10 +655,10 @@ class Runner(AbstractRunner):
 
 
     @staticmethod
-    def forward_fn(inputs, targets, model, loss_fn):
+    def forward_fn(inputs, targets, model, loss_fn) -> Dict[str, Any]:
         outputs = model(*inputs)
         loss = loss_fn(outputs, *targets)
-        return loss, outputs
+        return {'outputs':outputs, 'loss':loss}
 
     def parse_augmentations(self):
         # TODO: Move to this module
