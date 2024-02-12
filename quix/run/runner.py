@@ -829,7 +829,7 @@ class Runner(AbstractRunner):
         if schcls is None:
             raise ValueError(f'Scheduler: {self.cfg.opt.lr_scheduler} not found.')
         try:
-            num_steps = len(trainloader)
+            num_steps = len(trainloader) // self.opt.accumulation_steps
         except:
             num_steps = None
         return schcls(
