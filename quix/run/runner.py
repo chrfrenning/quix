@@ -374,7 +374,7 @@ class AbstractRunner:
     
     @staticmethod
     def _fetch_state_dict(key, **kwargs):
-        cls_ = kwargs.get('optimizer', None)
+        cls_ = kwargs.get(key, None)
         if cls_ is not None and hasattr(cls_, 'state_dict'):
             return cls_.state_dict()
         return None
