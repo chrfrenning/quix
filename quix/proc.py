@@ -164,7 +164,7 @@ class BatchProcessor(_AbstractBatchProcessor):
         self._acc_iteration = 0
         self._avg_update = average_steps * accumulation_steps
         self._avg_iteration = 0
-        self._skip_averaging = self.average_steps > 0
+        self._skip_averaging = self.average_steps <= 0
         self._acc_skipped = 0
 
     @property
