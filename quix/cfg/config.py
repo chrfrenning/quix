@@ -192,6 +192,8 @@ class OptimizerConfig(_BaseConfig):
         Values for custom weight decay keys.
     opt_epsilon : float
         Epsilon for optimizer momentum.
+    momentum : float
+        Momentum for SGD.
     gradclip : float
         Gradient norm clipping.
     accumulation_steps : int
@@ -221,6 +223,7 @@ class OptimizerConfig(_BaseConfig):
     custom_decay_keys:List[str] = add_argument(default=[], nargs='+')
     custom_decay_vals:List[float] = add_argument(default=[], nargs='+')
     opt_epsilon:float = 1e-7
+    momentum:float = 0.9
     gradclip:float = 1.0
     accumulation_steps:int = 1
     amsgrad:bool = False

@@ -634,7 +634,8 @@ class Runner(AbstractRunner):
 
     optimizer_dict = { # Fix later
         'adamw': torch.optim.AdamW,
-        'adam': torch.optim.Adam
+        'adam': torch.optim.Adam,
+        'sdg': torch.optim.SGD,
     }
 
     scheduler_dict = {
@@ -813,12 +814,21 @@ class Runner(AbstractRunner):
         optcls = self.optimizer_dict.get(self.opt.optim, None)
         if optcls is None:
             raise ValueError(f'Optimizer: {self.opt.optim} not found.')
+        
+        
+        optkwargs = {'lr': self.opt.lr, 'weight_decay': self.opt.weight_decay}
+        if self.opt.optim in ['adam', 'adamw']:
+            optkwargs['eps'] = self.opt.opt_epsilon
+        if self.opt.optim == 'sgd':
+            optkwargs['momentum'] = self.opt.momentum
+
         if self.opt.zro and self.distributed:
             optimizer = ZeroRedundancyOptimizer(
-                parameters, optcls, lr=self.opt.lr, weight_decay=self.opt.weight_decay
+                parameters, optcls, **optkwargs #type: ignore
             )
         else:
-            optimizer = optcls(parameters, lr=self.opt.lr, weight_decay=self.opt.weight_decay)
+            optimizer = optcls(parameters, **optkwargs)
+        
         return optimizer
     
     def parse_scaler(self) -> Optional[GradScaler]:
