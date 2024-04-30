@@ -17,7 +17,6 @@ class CosineDecay(lr_scheduler._LRScheduler):
     def __init__(
         self, optimizer:Optimizer, lr_start:float, lr_stop:float, epochs:int, 
         warmup_ratio:float, num_steps:Optional[int]=None, last_epoch:int=-1, 
-        verbose:bool=False
     ):
         '''Initializes scheduler.
 
@@ -47,7 +46,7 @@ class CosineDecay(lr_scheduler._LRScheduler):
         else:
             self._epochsteps = 1
 
-        super().__init__(optimizer, last_epoch, verbose=verbose)
+        super().__init__(optimizer, last_epoch)
         
         
     def get_lr(self):
