@@ -635,7 +635,7 @@ class Runner(AbstractRunner):
     optimizer_dict = { # Fix later
         'adamw': torch.optim.AdamW,
         'adam': torch.optim.Adam,
-        'sdg': torch.optim.SGD,
+        'sgd': torch.optim.SGD,
     }
 
     scheduler_dict = {
