@@ -4,7 +4,7 @@ setup(
     name = 'quix',
     version = '0.1.21',
     description = 'QUIck eXperiment',
-    licence = 'GNUv3',
+    license = 'GNUv3',
     packages = ['quix', 'quix.run', 'quix.cfg', 'quix.data'],
     install_requires = [
         'toml >= 0.10.2',
